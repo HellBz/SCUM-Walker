@@ -128,6 +128,7 @@ async function loadData() {
     if (!data.routes) data.routes = [];
     if (!data.pois) data.pois = [];
     await syncRecordingState();
+    await syncLiveTrackingState();
     updateUI();
   } catch (err) {
     statusEl.textContent = 'Fehler beim Laden: ' + err;
@@ -557,6 +558,31 @@ document.getElementById('poiSave').addEventListener('click', async () => {
   updateUI();
   poiDialog.classList.remove('open');
   pendingPoi = null;
+});
+
+// Live tracking toggle
+let isLiveTracking = false;
+const liveTrackingBtn = document.getElementById('toggleLiveTracking');
+
+async function syncLiveTrackingState() {
+  try {
+    isLiveTracking = await invoke('is_live_tracking');
+  } catch (err) {
+    isLiveTracking = false;
+  }
+  if (liveTrackingBtn) {
+    liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
+  }
+}
+
+liveTrackingBtn.addEventListener('click', async () => {
+  try {
+    isLiveTracking = await invoke('toggle_live_tracking');
+    liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
+    statusEl.textContent = isLiveTracking ? 'Live-Tracking aktiv' : 'Live-Tracking pausiert';
+  } catch (err) {
+    statusEl.textContent = 'Live-Tracking: ' + err;
+  }
 });
 
 // Live-Map Overlay

@@ -86,6 +86,7 @@ pub(crate) struct AppState {
     data: Mutex<AppData>,
     data_path: PathBuf,
     recording: Mutex<bool>,
+    live_tracking: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
 }
 
@@ -267,15 +268,15 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let mut clipboard = Clipboard::new().expect("clipboard");
         loop {
-            let recording = *state.recording.lock().unwrap();
-            if recording {
+            let tracking = *state.live_tracking.lock().unwrap();
+            if tracking {
                 focus_scum_window();
                 std::thread::sleep(Duration::from_millis(100));
                 press_ctrl_c();
                 thread::sleep(Duration::from_millis(300));
                 if let Ok(text) = clipboard.get_text() {
                     if let Some(record) = parse_clipboard(&text) {
-                        let should_record = {
+                        let should_emit = {
                             let mut pos = state.current_position.lock().unwrap();
                             let changed = pos.as_ref().map_or(true, |last| {
                                 (last.x - record.x).abs() > 0.1 || (last.y - record.y).abs() > 0.1
@@ -284,16 +285,18 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                             changed
                         };
 
-                        let mut data = state.data.lock().unwrap();
-                        if let Some(current_id) = data.current_route_id.clone() {
-                            if let Some(route) = data.routes.iter_mut().find(|r| r.id == current_id) {
-                                route.records.push(record.clone());
-                                save_data(&state.data_path, &data);
+                        if *state.recording.lock().unwrap() {
+                            let mut data = state.data.lock().unwrap();
+                            if let Some(current_id) = data.current_route_id.clone() {
+                                if let Some(route) = data.routes.iter_mut().find(|r| r.id == current_id) {
+                                    route.records.push(record.clone());
+                                    save_data(&state.data_path, &data);
+                                }
                             }
+                            drop(data);
                         }
-                        drop(data);
 
-                        if should_record {
+                        if should_emit {
                             let _ = app_handle.emit("coord-update", record);
                         }
                     }
@@ -374,12 +377,31 @@ fn toggle_route_visibility(state: State<Arc<AppState>>, id: String) -> AppData {
 fn toggle_recording(state: State<Arc<AppState>>) -> bool {
     let mut recording = state.recording.lock().unwrap();
     *recording = !*recording;
+    // recording requires live tracking
+    if *recording {
+        let mut tracking = state.live_tracking.lock().unwrap();
+        if !*tracking {
+            *tracking = true;
+        }
+    }
     *recording
 }
 
 #[tauri::command]
 fn is_recording(state: State<Arc<AppState>>) -> bool {
     *state.recording.lock().unwrap()
+}
+
+#[tauri::command]
+fn toggle_live_tracking(state: State<Arc<AppState>>) -> bool {
+    let mut tracking = state.live_tracking.lock().unwrap();
+    *tracking = !*tracking;
+    *tracking
+}
+
+#[tauri::command]
+fn is_live_tracking(state: State<Arc<AppState>>) -> bool {
+    *state.live_tracking.lock().unwrap()
 }
 
 #[tauri::command]
@@ -542,6 +564,7 @@ fn main() {
                 data: Mutex::new(data),
                 data_path,
                 recording: Mutex::new(false),
+                live_tracking: Mutex::new(false),
                 current_position: Mutex::new(None),
             });
 
@@ -590,6 +613,8 @@ fn main() {
             toggle_route_visibility,
             toggle_recording,
             is_recording,
+            toggle_live_tracking,
+            is_live_tracking,
             add_poi,
             remove_poi,
             paste_poi_screenshot,
