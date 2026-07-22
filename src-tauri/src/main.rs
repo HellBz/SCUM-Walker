@@ -498,7 +498,7 @@ fn reset_overlay_config(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn copy_livemap_url() -> Result<(), String> {
     use arboard::Clipboard;
-    let url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT);
+    let url = format!("http://127.0.0.1:{}/livemap.html?overlay=1", http_server::HTTP_PORT);
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     clipboard.set_text(url).map_err(|e| e.to_string())?;
     Ok(())
