@@ -37,55 +37,76 @@ let pendingPoi = null;
 
 let data = { routes: [], current_route_id: null, pois: [] };
 
-// Zoom / Pan state (matches nerdmaps index.php logic)
+// Zoom / Pan state
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4.0;
 const ZOOM_STEP = 0.1;
 let zoom = 1.0;
 let panX = 0;
 let panY = 0;
+let mapImg = new Image();
+mapImg.src = 'scum_map-1080x1080.png';
+mapImg.onload = () => applyTransform();
 
-function gameToPixelX(gameX) {
+function gameToMapX(gameX) {
   return ((worldMaxX - gameX) / worldWidth) * MAP_SIZE;
 }
 
-function gameToPixelY(gameY) {
+function gameToMapY(gameY) {
   return ((worldMaxY - gameY) / worldHeight) * MAP_SIZE;
 }
 
-function pixelToGameX(px) {
-  return worldMaxX - (px / MAP_SIZE) * worldWidth;
-}
-
-function pixelToGameY(py) {
-  return worldMaxY - (py / MAP_SIZE) * worldHeight;
-}
-
-function viewportToCanvas(vx, vy) {
+function worldToScreen(gameX, gameY) {
   return {
-    cx: (vx - panX) / zoom,
-    cy: (vy - panY) / zoom
+    x: panX + zoom * gameToMapX(gameX),
+    y: panY + zoom * gameToMapY(gameY)
+  };
+}
+
+function screenToWorld(sx, sy) {
+  const mx = (sx - panX) / zoom;
+  const my = (sy - panY) / zoom;
+  return {
+    x: worldMaxX - (mx / MAP_SIZE) * worldWidth,
+    y: worldMaxY - (my / MAP_SIZE) * worldHeight
   };
 }
 
 function clampPan() {
-  const shellW = mapShell.offsetWidth;
-  const shellH = mapShell.offsetHeight;
+  const shellW = mapShell.clientWidth;
+  const shellH = mapShell.clientHeight;
   const contentW = MAP_SIZE * zoom;
   const contentH = MAP_SIZE * zoom;
-  const maxPanX = contentW - shellW;
-  const maxPanY = contentH - shellH;
-  panX = maxPanX <= 0 ? 0 : Math.max(-maxPanX, Math.min(0, panX));
-  panY = maxPanY <= 0 ? 0 : Math.max(-maxPanY, Math.min(0, panY));
+  if (contentW <= shellW) {
+    panX = (shellW - contentW) / 2;
+  } else {
+    panX = Math.min(0, Math.max(shellW - contentW, panX));
+  }
+  if (contentH <= shellH) {
+    panY = (shellH - contentH) / 2;
+  } else {
+    panY = Math.min(0, Math.max(shellH - contentH, panY));
+  }
+}
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = mapShell.clientWidth;
+  const h = mapShell.clientHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+  renderLabels();
 }
 
 function applyTransform() {
   clampPan();
-  mapContainer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  resizeCanvas();
   zoomLabel.textContent = Math.round(zoom * 100) + '%';
-  mapShell.style.cursor = MAP_SIZE * zoom > mapShell.offsetWidth + 1 ? 'grab' : '';
-  draw();
-  renderLabels();
+  mapShell.style.cursor = MAP_SIZE * zoom > mapShell.clientWidth + 1 ? 'grab' : '';
 }
 
 function autoFitZoom() {
@@ -94,9 +115,9 @@ function autoFitZoom() {
   const availH = mapShell.clientHeight - pad;
   const fit = Math.max(ZOOM_MIN, Math.min(1.0, Math.floor(Math.min(availW, availH) / MAP_SIZE * 10) / 10));
   zoom = fit;
-  const size = Math.round(MAP_SIZE * zoom);
-  panX = Math.max(0, (mapShell.clientWidth - size) / 2);
-  panY = Math.max(0, (mapShell.clientHeight - size) / 2);
+  const size = MAP_SIZE * zoom;
+  panX = (mapShell.clientWidth - size) / 2;
+  panY = (mapShell.clientHeight - size) / 2;
   applyTransform();
 }
 
@@ -245,7 +266,13 @@ function escapeHtml(text) {
 }
 
 function draw() {
-  ctx.clearRect(0, 0, MAP_SIZE, MAP_SIZE);
+  const w = mapShell.clientWidth;
+  const h = mapShell.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  if (mapImg && mapImg.complete && mapImg.naturalWidth) {
+    ctx.drawImage(mapImg, 0, 0, MAP_SIZE, MAP_SIZE, panX, panY, MAP_SIZE * zoom, MAP_SIZE * zoom);
+  }
 
   data.routes.forEach(route => {
     const isCurrent = route.id === data.current_route_id;
@@ -254,13 +281,12 @@ function draw() {
     if (route.records.length > 1) {
       ctx.beginPath();
       ctx.strokeStyle = color;
-      ctx.lineWidth = (isCurrent ? 2.5 : 1.5) / zoom;
-      ctx.setLineDash(isCurrent ? [] : [5 / zoom, 5 / zoom]);
+      ctx.lineWidth = isCurrent ? 2.5 : 1.5;
+      ctx.setLineDash(isCurrent ? [] : [5, 5]);
       for (let i = 0; i < route.records.length; i++) {
-        const px = gameToPixelX(route.records[i].x);
-        const py = gameToPixelY(route.records[i].y);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+        const pt = worldToScreen(route.records[i].x, route.records[i].y);
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
       }
       ctx.stroke();
       ctx.setLineDash([]);
@@ -268,53 +294,44 @@ function draw() {
 
     if (route.records.length > 0) {
       const last = route.records[route.records.length - 1];
-      const px = gameToPixelX(last.x);
-      const py = gameToPixelY(last.y);
+      const pt = worldToScreen(last.x, last.y);
       ctx.beginPath();
-      ctx.arc(px, py, (isCurrent ? 7 : 4) / zoom, 0, 2 * Math.PI);
+      ctx.arc(pt.x, pt.y, isCurrent ? 7 : 4, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
       ctx.strokeStyle = '#000';
-      ctx.lineWidth = 1 / zoom;
+      ctx.lineWidth = 1;
       ctx.stroke();
     }
   });
 
-  // POIs (scaled inversely so they shrink as you zoom in)
   data.pois.forEach(poi => {
-    const px = gameToPixelX(poi.x);
-    const py = gameToPixelY(poi.y);
-    const r = 6 / zoom;
-    const lw = 1 / zoom;
+    const pt = worldToScreen(poi.x, poi.y);
     ctx.beginPath();
-    ctx.arc(px, py, r, 0, 2 * Math.PI);
+    ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
     ctx.fillStyle = poi.color;
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = lw;
+    ctx.lineWidth = 1;
     ctx.stroke();
-
   });
 }
 
 function renderLabels() {
   poiLabelsEl.innerHTML = '';
-  const shellW = mapShell.offsetWidth;
-  const shellH = mapShell.offsetHeight;
+  const shellW = mapShell.clientWidth;
+  const shellH = mapShell.clientHeight;
 
   data.pois.forEach(poi => {
-    const px = gameToPixelX(poi.x);
-    const py = gameToPixelY(poi.y);
-    const vx = panX + px * zoom;
-    const vy = panY + py * zoom;
+    const pt = worldToScreen(poi.x, poi.y);
 
-    if (vx < -20 || vx > shellW + 20 || vy < -10 || vy > shellH + 10) return;
+    if (pt.x < -20 || pt.x > shellW + 20 || pt.y < -10 || pt.y > shellH + 10) return;
 
     const el = document.createElement('div');
     el.className = 'poi-label';
     el.textContent = poi.label;
-    el.style.left = vx + 'px';
-    el.style.top = vy + 'px';
+    el.style.left = pt.x + 'px';
+    el.style.top = pt.y + 'px';
     poiLabelsEl.appendChild(el);
   });
 }
@@ -337,16 +354,12 @@ function buildColorPicker(container, colors, selected, onSelect, pickerInput) {
   }
 }
 
-mapContainer.addEventListener('contextmenu', (e) => {
+mapShell.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const rect = mapShell.getBoundingClientRect();
   const vx = e.clientX - rect.left;
   const vy = e.clientY - rect.top;
-  const { cx, cy } = viewportToCanvas(vx, vy);
-  pendingPoi = {
-    x: pixelToGameX(cx),
-    y: pixelToGameY(cy)
-  };
+  pendingPoi = screenToWorld(vx, vy);
   poiLabelInput.value = '';
   buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
   poiDialog.classList.add('open');
@@ -378,16 +391,26 @@ mapShell.addEventListener('wheel', (e) => {
 
 // Zoom: sidebar buttons
 document.getElementById('zoomIn').addEventListener('click', () => {
-  zoom = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)));
-  panX = panX - (MAP_SIZE / 2) * ZOOM_STEP;
-  panY = panY - (MAP_SIZE / 2) * ZOOM_STEP;
+  const shellW = mapShell.clientWidth;
+  const shellH = mapShell.clientHeight;
+  const newZoom = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)));
+  if (newZoom === zoom) return;
+  const ratio = newZoom / zoom;
+  panX = shellW / 2 - ratio * (shellW / 2 - panX);
+  panY = shellH / 2 - ratio * (shellH / 2 - panY);
+  zoom = newZoom;
   applyTransform();
 });
 
 document.getElementById('zoomOut').addEventListener('click', () => {
-  zoom = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)));
-  panX = panX + (MAP_SIZE / 2) * ZOOM_STEP;
-  panY = panY + (MAP_SIZE / 2) * ZOOM_STEP;
+  const shellW = mapShell.clientWidth;
+  const shellH = mapShell.clientHeight;
+  const newZoom = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)));
+  if (newZoom === zoom) return;
+  const ratio = newZoom / zoom;
+  panX = shellW / 2 - ratio * (shellW / 2 - panX);
+  panY = shellH / 2 - ratio * (shellH / 2 - panY);
+  zoom = newZoom;
   applyTransform();
 });
 
@@ -400,7 +423,7 @@ let panStartPanX = 0;
 let panStartPanY = 0;
 
 function mapIsLargerThanShell() {
-  return Math.round(MAP_SIZE * zoom) > mapShell.offsetWidth + 1;
+  return MAP_SIZE * zoom > mapShell.clientWidth + 1;
 }
 
 mapShell.addEventListener('mousedown', (e) => {
@@ -503,14 +526,14 @@ document.getElementById('poiSave').addEventListener('click', async () => {
   pendingPoi = null;
 });
 
-// Live-Map URL kopieren
+// Live-Map Overlay
 const overlayBtn = document.getElementById('openOverlay');
 overlayBtn.addEventListener('click', async () => {
   try {
-    await invoke('copy_livemap_url');
-    statusEl.textContent = 'Live-Map-URL kopiert: http://127.0.0.1:4488';
+    await invoke('open_overlay');
+    statusEl.textContent = 'Overlay geöffnet';
   } catch (err) {
-    statusEl.textContent = 'URL: ' + err;
+    statusEl.textContent = 'Overlay: ' + err;
   }
 });
 

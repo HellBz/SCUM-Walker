@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State};
+use tauri::webview::WebviewWindowBuilder;
 
 mod http_server;
 use windows::Win32::Foundation::{HWND, RECT};
@@ -80,11 +81,16 @@ pub(crate) struct AppState {
     data: Mutex<AppData>,
     data_path: PathBuf,
     recording: Mutex<bool>,
+    current_position: Mutex<Option<CoordRecord>>,
 }
 
 impl AppState {
     pub(crate) fn app_data(&self) -> AppData {
         self.data.lock().unwrap().clone()
+    }
+
+    pub(crate) fn current_position(&self) -> Option<CoordRecord> {
+        self.current_position.lock().unwrap().clone()
     }
 }
 
@@ -264,19 +270,26 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 thread::sleep(Duration::from_millis(300));
                 if let Ok(text) = clipboard.get_text() {
                     if let Some(record) = parse_clipboard(&text) {
+                        let should_record = {
+                            let mut pos = state.current_position.lock().unwrap();
+                            let changed = pos.as_ref().map_or(true, |last| {
+                                (last.x - record.x).abs() > 0.1 || (last.y - record.y).abs() > 0.1
+                            });
+                            *pos = Some(record.clone());
+                            changed
+                        };
+
                         let mut data = state.data.lock().unwrap();
-                        let current_id = data.current_route_id.clone();
-                        if let Some(current_id) = current_id {
+                        if let Some(current_id) = data.current_route_id.clone() {
                             if let Some(route) = data.routes.iter_mut().find(|r| r.id == current_id) {
                                 route.records.push(record.clone());
                                 save_data(&state.data_path, &data);
-                                drop(data);
-                                let _ = app_handle.emit("coord-update", record);
-                            } else {
-                                drop(data);
                             }
-                        } else {
-                            drop(data);
+                        }
+                        drop(data);
+
+                        if should_record {
+                            let _ = app_handle.emit("coord-update", record);
                         }
                     }
                 }
@@ -407,6 +420,24 @@ fn copy_livemap_url() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("overlay") {
+        window.show().map_err(|e| e.to_string())?;
+    } else {
+        return Err("Overlay-Fenster nicht verfügbar".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("overlay") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(move |app| {
@@ -419,11 +450,27 @@ fn main() {
                 data: Mutex::new(data),
                 data_path,
                 recording: Mutex::new(false),
+                current_position: Mutex::new(None),
             });
 
             start_recorder(state.clone(), app.handle().clone());
             http_server::start_http_server(state.clone());
             app.manage(state);
+
+            let overlay_url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT)
+                .parse()
+                .unwrap();
+            let _ = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::External(overlay_url))
+                .title("SCUM Walker Overlay")
+                .inner_size(500.0, 500.0)
+                .min_inner_size(250.0, 250.0)
+                .decorations(true)
+                .transparent(false)
+                .always_on_top(true)
+                .resizable(true)
+                .visible(false)
+                .build();
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -439,7 +486,9 @@ fn main() {
             remove_poi,
             paste_poi_screenshot,
             get_poi_image_base64,
-            copy_livemap_url
+            copy_livemap_url,
+            open_overlay,
+            close_overlay
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,8 +1,15 @@
+use serde::Serialize;
 use std::sync::Arc;
 use std::thread;
 use tiny_http::{Header, Method, Response, Server};
 
-use crate::AppState;
+use crate::{AppState, CoordRecord};
+
+#[derive(Serialize)]
+struct LiveMapData {
+    data: crate::AppData,
+    current_position: Option<CoordRecord>,
+}
 
 const LIVEMAP_HTML: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.html"));
 const LIVEMAP_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.css"));
@@ -47,7 +54,11 @@ pub fn start_http_server(state: Arc<AppState>) {
                 (&Method::Get, "/map.png") => bytes_response(MAP_PNG, "image/png"),
                 (&Method::Get, "/api/data") => {
                     let data = state.app_data();
-                    match serde_json::to_string(&data) {
+                    let payload = LiveMapData {
+                        data,
+                        current_position: state.current_position(),
+                    };
+                    match serde_json::to_string(&payload) {
                         Ok(json) => text_response(&json, "application/json"),
                         Err(e) => Response::from_string(format!("{{\"error\":\"{}\"}}", e))
                             .with_status_code(500)
