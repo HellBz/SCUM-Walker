@@ -81,6 +81,36 @@ if (dragHandle && currentWindow) {
 }
 
 let showCoords = safeGetStorage('overlay.showCoords', 'true') !== 'false';
+let followPlayer = safeGetStorage('livemap.follow', 'true') !== 'false';
+const followBtn = document.getElementById('followBtn');
+
+function updateFollowButton() {
+  if (followBtn) followBtn.classList.toggle('active', followPlayer);
+}
+updateFollowButton();
+
+function disableFollow() {
+  followPlayer = false;
+  safeSetStorage('livemap.follow', 'false');
+  updateFollowButton();
+}
+
+function enableFollow() {
+  followPlayer = true;
+  safeSetStorage('livemap.follow', 'true');
+  updateFollowButton();
+}
+
+if (followBtn) {
+  followBtn.addEventListener('click', () => {
+    if (followPlayer) disableFollow();
+    else {
+      enableFollow();
+      centerOnCurrentPos();
+    }
+  });
+}
+
 function updateCoordsVisibility() {
   if (!statusEl) return;
   if (!isOverlayMode) {
@@ -321,7 +351,8 @@ async function fetchData() {
         ? `X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`
         : 'Keine Position';
     }
-    centerOnCurrentPos();
+    if (followPlayer && currentPos) centerOnCurrentPos();
+    else draw();
   } catch (err) {
     connected = false;
     statusEl.textContent = 'Verbindung zur App verloren, versuche erneut…';
@@ -331,17 +362,28 @@ async function fetchData() {
 document.getElementById('zoomIn').addEventListener('click', () => {
   zoom = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)));
   saveZoom();
-  centerOnCurrentPos();
+  disableFollow();
+  if (currentPos) centerOnCurrentPos();
+  else draw();
 });
 
 document.getElementById('zoomOut').addEventListener('click', () => {
   zoom = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)));
   saveZoom();
+  disableFollow();
+  if (currentPos) centerOnCurrentPos();
+  else draw();
+});
+
+document.getElementById('centerBtn').addEventListener('click', () => {
+  enableFollow();
   centerOnCurrentPos();
 });
 
-document.getElementById('centerBtn').addEventListener('click', centerOnCurrentPos);
-document.getElementById('fitBtn').addEventListener('click', fitAll);
+document.getElementById('fitBtn').addEventListener('click', () => {
+  disableFollow();
+  fitAll();
+});
 
 window.addEventListener('resize', resizeCanvas);
 
@@ -367,6 +409,7 @@ mapShell.addEventListener('wheel', (e) => {
   zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat((zoom + step).toFixed(2))));
   saveZoom();
   updateZoomLabel();
+  disableFollow();
   if (currentPos) centerOnCurrentPos();
   else draw();
 }, { passive: false });

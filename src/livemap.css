@@ -133,6 +133,7 @@ body:not(.overlay-mode) #dragHandle {
 }
 
 #controls button:hover { background: #3a3a3a; }
+#controls button.active { color: #00ffcc; border-color: #00ffcc; }
 
 #zoomLabel {
   color: #aaa;
