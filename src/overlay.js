@@ -202,7 +202,7 @@ document.getElementById('centerBtn').addEventListener('click', () => {
 
 opacitySlider.addEventListener('input', () => {
   const val = opacitySlider.value / 100;
-  document.getElementById('overlayRoot').style.background = `rgba(0, 0, 0, ${0.4 + val * 0.5})`;
+  document.getElementById('mapShell').style.opacity = val;
 });
 
 lockBtn.addEventListener('click', async () => {
@@ -227,6 +227,27 @@ document.getElementById('closeBtn').addEventListener('click', async () => {
 
 window.addEventListener('resize', () => {
   if (currentPos && followPlayer) centerOnCurrentPos();
+});
+
+document.getElementById('applySize').addEventListener('click', async () => {
+  const width = parseInt(document.getElementById('winWidth').value, 10);
+  const height = parseInt(document.getElementById('winHeight').value, 10);
+  if (width >= 150 && height >= 150) {
+    try {
+      await invoke('resize_overlay', { width, height });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+});
+
+document.getElementById('positionSelect').addEventListener('change', async () => {
+  const position = document.getElementById('positionSelect').value;
+  try {
+    await invoke('position_overlay', { position });
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 loadData();

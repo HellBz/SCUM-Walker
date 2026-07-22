@@ -1,0 +1,110 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+#mapShell {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#mapContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1080px;
+  height: 1080px;
+  transform-origin: 0 0;
+  transition: transform 0.4s ease-out;
+  will-change: transform;
+}
+
+#mapContainer img,
+#mapCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1080px;
+  height: 1080px;
+  user-select: none;
+}
+
+#poiLabels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.poi-label {
+  position: absolute;
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+  transform: translate(8px, -50%);
+}
+
+#controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: rgba(20, 30, 30, 0.85);
+  border: 1px solid #00ffcc55;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+#controls button {
+  width: 26px;
+  height: 22px;
+  background: #2a2a2a;
+  border: 1px solid #555;
+  color: #fff;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  padding: 0;
+}
+
+#controls button:hover { background: #3a3a3a; }
+
+#zoomLabel {
+  color: #aaa;
+  font-size: 11px;
+  min-width: 34px;
+  text-align: center;
+}
+
+#status {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  font-size: 12px;
+  color: #aaa;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}

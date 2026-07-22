@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCUM Walker Live Map</title>
+  <link rel="stylesheet" href="livemap.css">
+</head>
+<body>
+  <div id="controls">
+    <button id="zoomOut" title="Herauszoomen">−</button>
+    <span id="zoomLabel">100%</span>
+    <button id="zoomIn" title="Hineinzoomen">+</button>
+    <button id="centerBtn" title="Auf aktuelle Position zentrieren">◎</button>
+    <button id="fitBtn" title="Gesamte Karte anzeigen">⛶</button>
+  </div>
+  <div id="mapShell">
+    <div id="mapContainer">
+      <img src="/map.png" width="1080" height="1080" alt="SCUM Map" id="mapImg">
+      <canvas id="mapCanvas" width="1080" height="1080"></canvas>
+    </div>
+    <div id="poiLabels"></div>
+  </div>
+  <div id="status">Warte auf Daten...</div>
+  <script src="livemap.js"></script>
+</body>
+</html>

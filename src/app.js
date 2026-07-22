@@ -503,14 +503,14 @@ document.getElementById('poiSave').addEventListener('click', async () => {
   pendingPoi = null;
 });
 
-// Overlay
+// Live-Map URL kopieren
 const overlayBtn = document.getElementById('openOverlay');
 overlayBtn.addEventListener('click', async () => {
   try {
-    await invoke('open_overlay');
-    statusEl.textContent = 'Overlay geöffnet';
+    await invoke('copy_livemap_url');
+    statusEl.textContent = 'Live-Map-URL kopiert: http://127.0.0.1:4488';
   } catch (err) {
-    statusEl.textContent = 'Overlay: ' + err;
+    statusEl.textContent = 'URL: ' + err;
   }
 });
 

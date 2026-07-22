@@ -5,8 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SCUM Walker Overlay</title>
   <link rel="stylesheet" href="overlay.css">
+  <style>
+    #overlayError {
+      position: fixed;
+      inset: 0;
+      background: #300;
+      color: #fff;
+      padding: 12px;
+      font-size: 12px;
+      z-index: 9999;
+      display: none;
+      overflow: auto;
+    }
+  </style>
 </head>
 <body>
+  <div id="overlayError"></div>
   <div id="overlayRoot">
     <div id="dragHandle" data-tauri-drag-region>
       <span>Live Map</span>
@@ -28,12 +42,43 @@
       <button id="zoomOut">−</button>
       <span id="zoomLabel">100%</span>
       <button id="zoomIn">+</button>
-      <input type="range" id="opacitySlider" min="20" max="100" value="80" title="Deckkraft">
+      <input type="range" id="opacitySlider" min="10" max="100" value="80" title="Deckkraft">
       <button id="centerBtn" title="Auf Position zentrieren">◎</button>
+    </div>
+
+    <div id="sizeControls">
+      <label>Grösse</label>
+      <input type="number" id="winWidth" value="400" min="150" step="10">
+      <span>×</span>
+      <input type="number" id="winHeight" value="400" min="150" step="10">
+      <button id="applySize">Set</button>
+      <select id="positionSelect" title="Position">
+        <option value="top-left">Oben links</option>
+        <option value="top-right" selected>Oben rechts</option>
+        <option value="bottom-left">Unten links</option>
+        <option value="bottom-right">Unten rechts</option>
+        <option value="center">Mitte</option>
+      </select>
     </div>
 
     <div id="status">Warte auf Position...</div>
   </div>
+  <script>
+    function showError(msg) {
+      const el = document.getElementById('overlayError');
+      el.style.display = 'block';
+      el.textContent += msg + '\n';
+    }
+    window.onerror = function(msg, url, line, col, err) {
+      showError('JS-Fehler: ' + msg + ' @ ' + line + ':' + col);
+      return false;
+    };
+    try {
+      showError('URL: ' + window.location.href);
+      if (!window.__TAURI__) showError('window.__TAURI__ fehlt');
+      else if (!window.__TAURI__.core) showError('window.__TAURI__.core fehlt');
+    } catch (e) { showError(String(e)); }
+  </script>
   <script src="overlay.js"></script>
 </body>
 </html>

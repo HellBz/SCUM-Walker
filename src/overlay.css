@@ -100,7 +100,7 @@ html, body {
   transform: translate(7px, -50%);
 }
 
-#controls {
+#controls, #sizeControls {
   height: 30px;
   background: rgba(20, 30, 30, 0.85);
   display: flex;
@@ -110,8 +110,7 @@ html, body {
   border-top: 1px solid #00ffcc33;
 }
 
-#controls button {
-  width: 22px;
+#controls button, #sizeControls button {
   height: 22px;
   background: #2a2a2a;
   border: 1px solid #555;
@@ -121,10 +120,11 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  padding: 0 6px;
+  font-size: 11px;
 }
 
-#controls button:hover { background: #3a3a3a; }
+#controls button:hover, #sizeControls button:hover { background: #3a3a3a; }
 
 #zoomLabel {
   color: #aaa;
@@ -139,9 +139,39 @@ html, body {
   accent-color: #00ffcc;
 }
 
+#sizeControls label {
+  color: #aaa;
+  font-size: 11px;
+}
+
+#sizeControls input[type="number"] {
+  width: 60px;
+  background: #111;
+  border: 1px solid #555;
+  color: #fff;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+#sizeControls select {
+  flex: 1;
+  background: #111;
+  border: 1px solid #555;
+  color: #fff;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+#sizeControls span {
+  color: #aaa;
+  font-size: 11px;
+}
+
 #status {
   position: absolute;
-  bottom: 36px;
+  bottom: 66px;
   left: 8px;
   font-size: 10px;
   color: #aaa;

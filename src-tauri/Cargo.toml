@@ -16,6 +16,7 @@ chrono = { version = "0.4", features = ["serde"] }
 windows = { version = "0.56", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics", "Win32_Graphics_Gdi"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
+tiny_http = "0.12"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
