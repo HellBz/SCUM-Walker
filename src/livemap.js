@@ -182,6 +182,12 @@ function saveZoom() {
   safeSetStorage('livemap.zoom', zoom.toFixed(2));
 }
 
+function saveView() {
+  safeSetStorage('livemap.zoom', zoom.toFixed(2));
+  safeSetStorage('livemap.panX', panX.toFixed(2));
+  safeSetStorage('livemap.panY', panY.toFixed(2));
+}
+
 function gameToMapX(gameX) {
   return ((worldMaxX - gameX) / worldWidth) * MAP_SIZE;
 }
@@ -299,11 +305,11 @@ function fitAll() {
   const w = mapShell.clientWidth;
   const h = mapShell.clientHeight;
   zoom = Math.max(ZOOM_MIN, Math.min(w, h) / MAP_SIZE);
-  saveZoom();
   panX = (w - MAP_SIZE * zoom) / 2;
   panY = (h - MAP_SIZE * zoom) / 2;
   updateZoomLabel();
   draw();
+  saveView();
 }
 
 function centerOnCurrentPos() {
@@ -316,6 +322,7 @@ function centerOnCurrentPos() {
   panY = h / 2 - zoom * my;
   updateZoomLabel();
   draw();
+  saveView();
 }
 
 async function fetchData() {
@@ -358,7 +365,6 @@ async function fetchData() {
 function zoomTo(newZoom) {
   const oldZoom = zoom;
   zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat(newZoom.toFixed(2))));
-  saveZoom();
   if (followPlayer && currentPos) {
     centerOnCurrentPos();
   } else {
@@ -369,6 +375,7 @@ function zoomTo(newZoom) {
     panY = h / 2 - (h / 2 - panY) * scale;
     draw();
   }
+  saveView();
 }
 
 document.getElementById('zoomIn').addEventListener('click', () => {
@@ -398,7 +405,11 @@ mapImg.onload = () => {
   if (!isNaN(savedZoom) && savedZoom >= ZOOM_MIN && savedZoom <= ZOOM_MAX) {
     zoom = savedZoom;
     updateZoomLabel();
-    if (currentPos) centerOnCurrentPos();
+    const savedPanX = parseFloat(safeGetStorage('livemap.panX', ''));
+    const savedPanY = parseFloat(safeGetStorage('livemap.panY', ''));
+    if (!isNaN(savedPanX)) panX = savedPanX;
+    if (!isNaN(savedPanY)) panY = savedPanY;
+    if (followPlayer && currentPos) centerOnCurrentPos();
     else draw();
   } else {
     fitAll();
@@ -438,6 +449,7 @@ window.addEventListener('mouseup', () => {
   if (isPanning) {
     isPanning = false;
     disableFollow();
+    saveView();
   }
 });
 
