@@ -82,7 +82,12 @@ if (dragHandle && currentWindow) {
 
 let showCoords = safeGetStorage('overlay.showCoords', 'true') !== 'false';
 function updateCoordsVisibility() {
-  if (statusEl) statusEl.style.display = (isOverlayMode && showCoords) ? 'block' : 'none';
+  if (!statusEl) return;
+  if (!isOverlayMode) {
+    statusEl.style.display = 'block';
+  } else {
+    statusEl.style.display = showCoords ? 'block' : 'none';
+  }
 }
 updateCoordsVisibility();
 
@@ -114,7 +119,7 @@ window.onerror = function(msg, url, line) {
   return false;
 };
 
-const API_BASE = isTauri ? 'http://127.0.0.1:4488' : '';
+const API_BASE = 'http://127.0.0.1:4488';
 
 function safeGetStorage(key, fallback) {
   try { return localStorage.getItem(key); } catch { return fallback; }
