@@ -79,6 +79,11 @@ body.overlay-mode #opacitySlider {
   display: flex;
 }
 
+body:not(.overlay-mode) #overlayClose,
+body:not(.overlay-mode) #opacitySlider {
+  display: none;
+}
+
 #controls button {
   width: 26px;
   height: 22px;
