@@ -355,20 +355,28 @@ async function fetchData() {
   }
 }
 
-document.getElementById('zoomIn').addEventListener('click', () => {
-  zoom = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)));
+function zoomTo(newZoom) {
+  const oldZoom = zoom;
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat(newZoom.toFixed(2))));
   saveZoom();
-  disableFollow();
-  if (currentPos) centerOnCurrentPos();
-  else draw();
+  if (followPlayer && currentPos) {
+    centerOnCurrentPos();
+  } else {
+    const w = mapShell.clientWidth;
+    const h = mapShell.clientHeight;
+    const scale = zoom / oldZoom;
+    panX = w / 2 - (w / 2 - panX) * scale;
+    panY = h / 2 - (h / 2 - panY) * scale;
+    draw();
+  }
+}
+
+document.getElementById('zoomIn').addEventListener('click', () => {
+  zoomTo(zoom + ZOOM_STEP);
 });
 
 document.getElementById('zoomOut').addEventListener('click', () => {
-  zoom = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)));
-  saveZoom();
-  disableFollow();
-  if (currentPos) centerOnCurrentPos();
-  else draw();
+  zoomTo(zoom - ZOOM_STEP);
 });
 
 document.getElementById('centerBtn').addEventListener('click', () => {
@@ -400,13 +408,9 @@ mapImg.onerror = () => { resizeCanvas(); fitAll(); };
 
 mapShell.addEventListener('wheel', (e) => {
   e.preventDefault();
-  const step = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat((zoom + step).toFixed(2))));
-  saveZoom();
-  updateZoomLabel();
   disableFollow();
-  if (currentPos) centerOnCurrentPos();
-  else draw();
+  const step = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+  zoomTo(zoom + step);
 }, { passive: false });
 
 let isPanning = false;
