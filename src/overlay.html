@@ -66,8 +66,8 @@
 <body>
   <div id="bar" data-tauri-drag-region>
     <span data-tauri-drag-region>SCUM Walker Overlay</span>
-    <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft">
-    <button id="closeBtn" title="Ausblenden">×</button>
+    <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft" data-tauri-no-drag-region>
+    <button id="closeBtn" title="Ausblenden" data-tauri-no-drag-region>×</button>
   </div>
   <iframe id="mapFrame" src="http://127.0.0.1:4488/livemap.html?overlay=1" allowtransparency></iframe>
   <script src="overlay.js"></script>

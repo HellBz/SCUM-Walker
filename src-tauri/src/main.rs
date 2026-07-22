@@ -426,6 +426,50 @@ fn get_poi_image_base64(state: State<Arc<AppState>>, id: String) -> Result<Strin
     Ok(BASE64_STANDARD.encode(bytes))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct OverlayConfig {
+    x: Option<i32>,
+    y: Option<i32>,
+    width: Option<u32>,
+    height: Option<u32>,
+    opacity: Option<f64>,
+}
+
+fn overlay_config_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path().app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("overlay_config.json")
+}
+
+fn load_overlay_config(path: &PathBuf) -> OverlayConfig {
+    if !path.exists() {
+        return OverlayConfig::default();
+    }
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_overlay_config_file(path: &PathBuf, config: &OverlayConfig) {
+    if let Ok(json) = serde_json::to_string_pretty(config) {
+        let _ = fs::write(path, json);
+    }
+}
+
+#[tauri::command]
+fn save_overlay_config(app: tauri::AppHandle, config: OverlayConfig) -> Result<(), String> {
+    let path = overlay_config_path(&app);
+    save_overlay_config_file(&path, &config);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_overlay_config(app: tauri::AppHandle) -> OverlayConfig {
+    let path = overlay_config_path(&app);
+    load_overlay_config(&path)
+}
+
 #[tauri::command]
 fn copy_livemap_url() -> Result<(), String> {
     use arboard::Clipboard;
@@ -480,17 +524,21 @@ fn main() {
             http_server::start_http_server(state.clone());
             app.manage(state);
 
-            let _ = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::App("overlay.html".into()))
+            let overlay_config = load_overlay_config(&overlay_config_path(&app.handle()));
+            let mut overlay_builder = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::App("overlay.html".into()))
                 .title("SCUM Walker Overlay")
-                .inner_size(450.0, 450.0)
+                .inner_size(overlay_config.width.unwrap_or(450) as f64, overlay_config.height.unwrap_or(450) as f64)
                 .min_inner_size(200.0, 200.0)
                 .decorations(false)
                 .transparent(true)
                 .always_on_top(true)
                 .resizable(true)
                 .skip_taskbar(true)
-                .visible(false)
-                .build();
+                .visible(false);
+            if let (Some(x), Some(y)) = (overlay_config.x, overlay_config.y) {
+                overlay_builder = overlay_builder.position(x as f64, y as f64);
+            }
+            let _ = overlay_builder.build();
 
             Ok(())
         })
@@ -511,7 +559,9 @@ fn main() {
             copy_livemap_url,
             open_overlay,
             close_overlay,
-            set_overlay_clickthrough
+            set_overlay_clickthrough,
+            save_overlay_config,
+            get_overlay_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
