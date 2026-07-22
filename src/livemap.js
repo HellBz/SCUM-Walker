@@ -4,9 +4,13 @@ const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const poiLabelsEl = document.getElementById('poiLabels');
 
+const params = new URLSearchParams(window.location.search);
 const isTauri = typeof window.__TAURI__ !== 'undefined';
-if (isTauri) {
+const isOverlayMode = isTauri || params.get('overlay') === '1';
+if (isOverlayMode) {
   document.body.classList.add('overlay-mode');
+}
+if (isTauri) {
   const closeBtn = document.getElementById('overlayClose');
   if (closeBtn) {
     closeBtn.addEventListener('click', () => {
@@ -29,7 +33,6 @@ const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 8.0;
 const ZOOM_STEP = 0.25;
 
-const params = new URLSearchParams(window.location.search);
 let zoom = parseFloat(localStorage.getItem('livemap.zoom')) || 1.5;
 const urlZoom = parseFloat(params.get('zoom'));
 if (!isNaN(urlZoom) && urlZoom >= ZOOM_MIN && urlZoom <= ZOOM_MAX) {
@@ -237,9 +240,8 @@ window.addEventListener('resize', resizeCanvas);
 
 mapImg = new Image();
 mapImg.src = API_BASE + '/map.png';
-mapImg.onload = () => {
-  resizeCanvas();
-  fitAll();
-  fetchData();
-  setInterval(fetchData, 2000);
-};
+mapImg.onload = () => { resizeCanvas(); fitAll(); };
+mapImg.onerror = () => { resizeCanvas(); fitAll(); };
+
+fetchData();
+setInterval(fetchData, 2000);

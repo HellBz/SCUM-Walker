@@ -16,18 +16,29 @@
       font-family: 'Segoe UI', sans-serif;
       color: #fff;
     }
+    body:hover #bar { opacity: 1; }
     #bar {
-      height: 28px;
+      position: absolute;
+      top: 0;
+      right: 0;
+      z-index: 100;
+      height: 26px;
       background: rgba(10, 15, 15, 0.85);
-      border-bottom: 1px solid #00ffcc55;
+      border: 1px solid #00ffcc55;
+      border-top: none;
+      border-right: none;
+      border-radius: 0 0 0 6px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 6px;
       padding: 0 8px;
       font-size: 12px;
       user-select: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
     }
-    #bar span { font-weight: bold; color: #00ffcc; }
+    #bar span { font-weight: bold; color: #00ffcc; margin-right: 6px; }
+    #bar input[type="range"] { width: 70px; height: 14px; }
     #bar button {
       background: transparent;
       border: 1px solid #555;
@@ -37,15 +48,16 @@
       width: 22px;
       height: 18px;
       padding: 0;
-      margin-left: 4px;
       font-size: 12px;
       line-height: 1;
     }
     #bar button:hover { border-color: #00ffcc; color: #00ffcc; }
-    #bar button.locked { color: #ff4444; border-color: #ff4444; }
     #mapFrame {
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
-      height: calc(100% - 28px);
+      height: 100%;
       border: none;
       background: transparent;
     }
@@ -54,11 +66,8 @@
 <body>
   <div id="bar" data-tauri-drag-region>
     <span data-tauri-drag-region>SCUM Walker Overlay</span>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft" style="width:70px;height:14px;">
-      <button id="lockBtn" title="Klick-durchlässig umschalten">🔒</button>
-      <button id="closeBtn" title="Ausblenden">×</button>
-    </div>
+    <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft">
+    <button id="closeBtn" title="Ausblenden">×</button>
   </div>
   <iframe id="mapFrame" src="http://127.0.0.1:4488/livemap.html?overlay=1" allowtransparency></iframe>
   <script src="overlay.js"></script>
