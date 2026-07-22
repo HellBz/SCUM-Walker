@@ -21,6 +21,13 @@ if (isTauri) {
 
 const API_BASE = isTauri ? 'http://127.0.0.1:4488' : '';
 
+function safeGetStorage(key, fallback) {
+  try { return localStorage.getItem(key); } catch { return fallback; }
+}
+function safeSetStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
 const MAP_SIZE = 1080;
 const worldMinX = -904800;
 const worldMaxX = 616818;
@@ -33,7 +40,7 @@ const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 8.0;
 const ZOOM_STEP = 0.25;
 
-let zoom = parseFloat(localStorage.getItem('livemap.zoom')) || 1.5;
+let zoom = parseFloat(safeGetStorage('livemap.zoom', '1.5')) || 1.5;
 const urlZoom = parseFloat(params.get('zoom'));
 if (!isNaN(urlZoom) && urlZoom >= ZOOM_MIN && urlZoom <= ZOOM_MAX) {
   zoom = urlZoom;
@@ -46,7 +53,7 @@ let connected = false;
 let mapImg = null;
 
 function saveZoom() {
-  localStorage.setItem('livemap.zoom', zoom.toFixed(2));
+  safeSetStorage('livemap.zoom', zoom.toFixed(2));
 }
 
 function gameToMapX(gameX) {

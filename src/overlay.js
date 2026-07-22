@@ -10,7 +10,14 @@ function applyOpacity(value) {
   if (mapFrame) mapFrame.style.opacity = (value / 100).toString();
 }
 
-const savedOpacity = localStorage.getItem('overlay.opacity');
+function safeGetStorage(key, fallback) {
+  try { return localStorage.getItem(key); } catch { return fallback; }
+}
+function safeSetStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
+const savedOpacity = safeGetStorage('overlay.opacity', null);
 if (opacitySlider && savedOpacity !== null) {
   opacitySlider.value = savedOpacity;
   applyOpacity(savedOpacity);
@@ -20,7 +27,7 @@ if (opacitySlider && mapFrame) {
   opacitySlider.addEventListener('input', () => {
     const value = opacitySlider.value;
     applyOpacity(value);
-    localStorage.setItem('overlay.opacity', value);
+    safeSetStorage('overlay.opacity', value);
   });
 }
 
@@ -28,7 +35,7 @@ async function saveOverlayState() {
   try {
     const size = await currentWindow.innerSize();
     const pos = await currentWindow.outerPosition();
-    const opacity = parseFloat(localStorage.getItem('overlay.opacity') || '85');
+    const opacity = parseFloat(safeGetStorage('overlay.opacity', '85'));
     await invoke('save_overlay_config', {
       config: {
         x: pos.x,
