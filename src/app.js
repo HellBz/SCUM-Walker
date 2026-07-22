@@ -36,6 +36,7 @@ let selectedPoiColor = POI_COLORS[0];
 let pendingPoi = null;
 
 let data = { routes: [], current_route_id: null, pois: [] };
+let isRecording = false;
 
 // Zoom / Pan state
 const ZOOM_MIN = 0.5;
@@ -126,6 +127,7 @@ async function loadData() {
     data = await invoke('get_data');
     if (!data.routes) data.routes = [];
     if (!data.pois) data.pois = [];
+    await syncRecordingState();
     updateUI();
   } catch (err) {
     statusEl.textContent = 'Fehler beim Laden: ' + err;
@@ -143,6 +145,20 @@ function updateUI() {
   renderLabels();
 }
 
+function updateGlobalRecordingButton() {
+  const toggleBtn = document.getElementById('toggleRecording');
+  toggleBtn.textContent = isRecording ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten';
+}
+
+async function syncRecordingState() {
+  try {
+    isRecording = await invoke('is_recording');
+  } catch (err) {
+    isRecording = false;
+  }
+  updateGlobalRecordingButton();
+}
+
 function renderRouteList() {
   routeListEl.innerHTML = '';
   if (data.routes.length === 0) {
@@ -151,12 +167,14 @@ function renderRouteList() {
   }
   data.routes.forEach(route => {
     const isCurrent = route.id === data.current_route_id;
+    const recordingHere = isCurrent && isRecording;
     const div = document.createElement('div');
     div.className = 'route-item' + (isCurrent ? ' active' : '');
     div.innerHTML = `
       <span class="route-color" style="background:${route.color || '#888'}"></span>
       <span class="route-name">${escapeHtml(route.name)}</span>
       <span class="route-actions">
+        <button class="route-icon ${recordingHere ? 'recording' : ''}" data-action="record" data-id="${route.id}" title="${recordingHere ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten'}">${recordingHere ? '⏹' : '⏺'}</button>
         <button class="route-icon ${isCurrent ? 'active' : ''}" data-action="activate" data-id="${route.id}" title="Aktivieren">◎</button>
         <button class="route-icon ${route.visible === false ? 'hidden' : ''}" data-action="toggle-visibility" data-id="${route.id}" title="${route.visible === false ? 'Einblenden' : 'Ausblenden'}">${route.visible === false ? '✘' : '👁'}</button>
         <button class="route-icon" data-action="rename" data-id="${route.id}" title="Umbenennen">✎</button>
@@ -172,7 +190,21 @@ function renderRouteList() {
       e.stopPropagation();
       const action = el.dataset.action;
       const id = el.dataset.id;
-      if (action === 'activate') {
+      if (action === 'record') {
+        const route = data.routes.find(r => r.id === id);
+        if (!route) return;
+        if (isRecording && data.current_route_id === id) {
+          isRecording = await invoke('toggle_recording');
+        } else {
+          if (!isRecording || data.current_route_id !== id) {
+            if (data.current_route_id !== id) {
+              data = await invoke('select_route', { id });
+            }
+            isRecording = await invoke('toggle_recording');
+          }
+        }
+        updateGlobalRecordingButton();
+      } else if (action === 'activate') {
         data = await invoke('select_route', { id });
       } else if (action === 'toggle-visibility') {
         data = await invoke('toggle_route_visibility', { id });
@@ -556,9 +588,10 @@ toggleBtn.addEventListener('click', async () => {
     statusEl.textContent = 'Bitte zuerst eine Route erstellen.';
     return;
   }
-  const recording = await invoke('toggle_recording');
-  toggleBtn.textContent = recording ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten';
-  statusEl.textContent = recording ? 'Aufzeichnung läuft...' : 'Aufzeichnung pausiert';
+  isRecording = await invoke('toggle_recording');
+  updateGlobalRecordingButton();
+  statusEl.textContent = isRecording ? 'Aufzeichnung läuft...' : 'Aufzeichnung pausiert';
+  updateUI();
 });
 
 // Live updates

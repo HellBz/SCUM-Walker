@@ -343,6 +343,12 @@ button:hover { background: #3a3a3a; }
 .route-icon:hover { border-color: #00ffcc; color: #00ffcc; }
 .route-icon.active { color: #00ffcc; border-color: #00ffcc; background: #1a3a33; }
 .route-icon.hidden { color: #ff4444; border-color: #ff4444; }
+.route-icon.recording { color: #ff4444; border-color: #ff4444; animation: pulse 1.2s infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 #ff4444aa; }
+  70% { box-shadow: 0 0 0 4px #ff444400; }
+  100% { box-shadow: 0 0 0 0 #ff444400; }
+}
 
 .poi-item {
   display: flex;

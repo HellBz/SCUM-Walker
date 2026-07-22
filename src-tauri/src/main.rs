@@ -378,6 +378,11 @@ fn toggle_recording(state: State<Arc<AppState>>) -> bool {
 }
 
 #[tauri::command]
+fn is_recording(state: State<Arc<AppState>>) -> bool {
+    *state.recording.lock().unwrap()
+}
+
+#[tauri::command]
 fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.pois.push(poi);
@@ -552,6 +557,7 @@ fn main() {
             set_route_color,
             toggle_route_visibility,
             toggle_recording,
+            is_recording,
             add_poi,
             remove_poi,
             paste_poi_screenshot,
