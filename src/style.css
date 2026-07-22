@@ -325,7 +325,7 @@ button:hover { background: #3a3a3a; }
   background: #1a3a33;
 }
 
-.route-item:hover { background: #2a2a2a; }
+.route-item:hover { background: #2a2a2a; cursor: pointer; }
 
 .route-color {
   width: 10px;

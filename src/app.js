@@ -162,6 +162,7 @@ function renderRouteList() {
   data.routes.forEach(route => {
     const isCurrent = route.id === data.current_route_id;
     const recordingHere = isCurrent && isRecording;
+    const visible = route.visible !== false;
     const div = document.createElement('div');
     div.className = 'route-item' + (isCurrent ? ' active' : '');
     div.innerHTML = `
@@ -169,13 +170,17 @@ function renderRouteList() {
       <span class="route-name">${escapeHtml(route.name)}</span>
       <span class="route-actions">
         <button class="route-icon ${recordingHere ? 'recording' : ''}" data-action="record" data-id="${route.id}" title="${recordingHere ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten'}">${recordingHere ? '⏹' : '⏺'}</button>
-        <button class="route-icon ${isCurrent ? 'active' : ''}" data-action="activate" data-id="${route.id}" title="Aktivieren">◎</button>
-        <button class="route-icon ${route.visible === false ? 'hidden' : ''}" data-action="toggle-visibility" data-id="${route.id}" title="${route.visible === false ? 'Einblenden' : 'Ausblenden'}">${route.visible === false ? '✘' : '👁'}</button>
+        <button class="route-icon ${visible ? '' : 'hidden'}" data-action="toggle-visibility" data-id="${route.id}" title="${visible ? 'Auf Karte ausblenden' : 'Auf Karte einblenden'}">${visible ? '👁' : '�'}</button>
         <button class="route-icon" data-action="rename" data-id="${route.id}" title="Umbenennen">✎</button>
         <button class="route-icon" data-action="delete" data-id="${route.id}" title="Löschen">🗑</button>
       </span>
       <span class="route-count">${route.records.length} Punkte</span>
     `;
+    div.addEventListener('click', async (e) => {
+      if (e.target.closest('.route-icon')) return;
+      data = await invoke('select_route', { id: route.id });
+      updateUI();
+    });
     routeListEl.appendChild(div);
   });
 
