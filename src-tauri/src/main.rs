@@ -476,6 +476,26 @@ fn get_overlay_config(app: tauri::AppHandle) -> OverlayConfig {
 }
 
 #[tauri::command]
+fn reset_overlay_config(app: tauri::AppHandle) -> Result<(), String> {
+    let path = overlay_config_path(&app);
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+    if let Some(window) = app.get_webview_window("overlay") {
+        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 450.0, height: 450.0 }));
+        if let Ok(monitor) = window.current_monitor() {
+            if let Some(m) = monitor {
+                let size = m.size();
+                let x = (size.width as i32 - 450) / 2;
+                let y = (size.height as i32 - 450) / 2;
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn copy_livemap_url() -> Result<(), String> {
     use arboard::Clipboard;
     let url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT);
@@ -567,7 +587,8 @@ fn main() {
             close_overlay,
             set_overlay_clickthrough,
             save_overlay_config,
-            get_overlay_config
+            get_overlay_config,
+            reset_overlay_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -574,6 +574,15 @@ document.getElementById('copyLivemapUrl').addEventListener('click', async () => 
   }
 });
 
+document.getElementById('resetOverlayPosition').addEventListener('click', async () => {
+  try {
+    await invoke('reset_overlay_config');
+    statusEl.textContent = 'Overlay-Position zurückgesetzt (neu öffnen, um zu sehen)';
+  } catch (err) {
+    statusEl.textContent = 'Overlay-Reset: ' + err;
+  }
+});
+
 // Global recording state is controlled per route via the route list icons
 
 // Live updates

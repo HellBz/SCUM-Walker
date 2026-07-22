@@ -20,24 +20,26 @@
     #bar {
       position: absolute;
       top: 0;
+      left: 0;
       right: 0;
       z-index: 100;
-      height: 26px;
+      height: 28px;
       background: rgba(10, 15, 15, 0.85);
-      border: 1px solid #00ffcc55;
-      border-top: none;
-      border-right: none;
-      border-radius: 0 0 0 6px;
+      border-bottom: 1px solid #00ffcc55;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 6px;
       padding: 0 8px;
       font-size: 12px;
       user-select: none;
       opacity: 0;
       transition: opacity 0.2s ease;
+      -webkit-app-region: drag;
+      app-region: drag;
     }
-    #bar span { font-weight: bold; color: #00ffcc; margin-right: 6px; }
+    #bar span { font-weight: bold; color: #00ffcc; margin-right: 6px; pointer-events: none; }
+    #bar .controls { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; app-region: no-drag; }
     #bar input[type="range"] { width: 70px; height: 14px; }
     #bar button {
       background: transparent;
@@ -64,10 +66,12 @@
   </style>
 </head>
 <body>
-  <div id="bar" data-tauri-drag-region>
-    <span data-tauri-drag-region>SCUM Walker Overlay</span>
-    <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft" data-tauri-no-drag-region>
-    <button id="closeBtn" title="Ausblenden" data-tauri-no-drag-region>×</button>
+  <div id="bar">
+    <span>SCUM Walker Overlay</span>
+    <div class="controls">
+      <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft">
+      <button id="closeBtn" title="Ausblenden">×</button>
+    </div>
   </div>
   <iframe id="mapFrame" src="http://127.0.0.1:4488/livemap.html?overlay=1" allowtransparency></iframe>
   <script src="overlay.js"></script>
