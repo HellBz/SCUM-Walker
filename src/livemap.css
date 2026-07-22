@@ -70,13 +70,14 @@ body.overlay-mode:hover #controls {
   opacity: 1;
 }
 
-#overlayClose, #opacitySlider, #dragHandle {
+#overlayClose, #opacitySlider, #dragHandle, #toggleCoords {
   display: none;
 }
 
 body.overlay-mode #overlayClose,
 body.overlay-mode #opacitySlider,
-body.overlay-mode #dragHandle {
+body.overlay-mode #dragHandle,
+body.overlay-mode #toggleCoords {
   display: flex;
 }
 

@@ -17,6 +17,7 @@ if (isOverlayMode) {
 const closeBtn = document.getElementById('overlayClose');
 const opacitySlider = document.getElementById('opacitySlider');
 const dragHandle = document.getElementById('dragHandle');
+const toggleCoordsBtn = document.getElementById('toggleCoords');
 
 let currentWindow = null;
 if (isTauri) {
@@ -76,6 +77,22 @@ if (dragHandle && currentWindow) {
       dragging = false;
       await saveOverlayState();
     }
+  });
+}
+
+let showCoords = safeGetStorage('overlay.showCoords', 'true') !== 'false';
+function updateCoordsVisibility() {
+  if (statusEl) statusEl.style.display = (isOverlayMode && showCoords) ? 'block' : 'none';
+}
+updateCoordsVisibility();
+
+if (toggleCoordsBtn) {
+  toggleCoordsBtn.classList.toggle('active', showCoords);
+  toggleCoordsBtn.addEventListener('click', () => {
+    showCoords = !showCoords;
+    safeSetStorage('overlay.showCoords', String(showCoords));
+    toggleCoordsBtn.classList.toggle('active', showCoords);
+    updateCoordsVisibility();
   });
 }
 
