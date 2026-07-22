@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCUM Walker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="sidebar">
+    <div class="sidebar-title">
+      <span class="brand">SCUM Walker</span>
+    </div>
+
+    <div id="status">Bereit</div>
+
+    <div class="section">
+      <h3>Aufzeichnung</h3>
+      <button id="toggleRecording">Aufzeichnung starten</button>
+      <div style="height:6px"></div>
+      <button id="newRoute">Neue Route</button>
+    </div>
+
+    <div class="section">
+      <h3>Routen</h3>
+      <div id="routeList"></div>
+      <div class="export-row">
+        <button id="exportJson">JSON exportieren</button>
+        <button id="exportCsv">CSV exportieren</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>POIs</h3>
+      <button id="addPoiFromLocation">Aktuelle Position als POI</button>
+      <p class="hint">Oder Rechtsklick auf die Karte.</p>
+      <div id="poiList"></div>
+    </div>
+
+    <div class="section">
+      <h3>Zoom</h3>
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomOut">−</button>
+        <span id="zoomLabel">100%</span>
+        <button class="zoom-btn" id="zoomIn">+</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Legende</h3>
+      <div class="legend-item"><span class="line active"></span> Aktive Route</div>
+      <div class="legend-item"><span class="line"></span> Andere Route</div>
+      <div class="legend-item"><span class="dot" style="background:#ff44d3"></span> POI</div>
+    </div>
+  </div>
+
+  <div id="mapShell">
+    <div id="mapContainer">
+      <img src="scum_map-1080x1080.png" width="1080" height="1080" alt="SCUM Map">
+      <canvas id="mapCanvas" width="1080" height="1080"></canvas>
+    </div>
+    <div id="poiLabels"></div>
+  </div>
+
+  <div id="routeDialog" class="dialog">
+    <div class="dialog-content">
+      <h3>Neue Route</h3>
+      <input type="text" id="routeNameInput" placeholder="Name der Route" maxlength="64">
+      <div class="custom-color-row">
+        <input type="color" id="routeColorPicker" value="#00ffcc">
+      </div>
+      <div id="routeColors" class="color-grid"></div>
+      <div class="dialog-actions">
+        <button id="routeCancel">Abbrechen</button>
+        <button id="routeSave">Erstellen</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="poiDialog" class="dialog">
+    <div class="dialog-content">
+      <h3>POI hinzufügen</h3>
+      <input type="text" id="poiLabel" placeholder="Name" maxlength="64">
+      <div class="custom-color-row">
+        <input type="color" id="poiColorPicker" value="#ff44d3">
+      </div>
+      <div id="poiColors" class="color-grid"></div>
+      <div class="dialog-actions">
+        <button id="poiCancel">Abbrechen</button>
+        <button id="poiSave">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="imageDialog" class="dialog">
+    <div class="dialog-content image-dialog-content">
+      <h3 id="imageDialogTitle">POI Bild</h3>
+      <img id="imageDialogImg" alt="POI Bild">
+      <div class="dialog-actions">
+        <button id="imageDialogClose">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
