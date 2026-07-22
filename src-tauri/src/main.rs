@@ -462,6 +462,26 @@ struct OverlayConfig {
     opacity: Option<f64>,
 }
 
+fn create_overlay_window(app: &tauri::AppHandle, config: &OverlayConfig) -> Result<tauri::WebviewWindow, String> {
+    let overlay_url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT)
+        .parse()
+        .unwrap();
+    let mut overlay_builder = WebviewWindowBuilder::new(app, "overlay", tauri::WebviewUrl::External(overlay_url))
+        .title("SCUM Walker Overlay")
+        .inner_size(config.width.unwrap_or(450) as f64, config.height.unwrap_or(450) as f64)
+        .min_inner_size(200.0, 200.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .resizable(true)
+        .skip_taskbar(true)
+        .visible(false);
+    if let (Some(x), Some(y)) = (config.x, config.y) {
+        overlay_builder = overlay_builder.position(x as f64, y as f64);
+    }
+    overlay_builder.build().map_err(|e| e.to_string())
+}
+
 fn overlay_config_path(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -520,7 +540,7 @@ fn reset_overlay_config(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn copy_livemap_url() -> Result<(), String> {
     use arboard::Clipboard;
-    let url = format!("http://127.0.0.1:{}/livemap.html?overlay=1", http_server::HTTP_PORT);
+    let url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT);
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     clipboard.set_text(url).map_err(|e| e.to_string())?;
     Ok(())
@@ -528,10 +548,12 @@ fn copy_livemap_url() -> Result<(), String> {
 
 #[tauri::command]
 fn open_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    if app.get_webview_window("overlay").is_none() {
+        let config = load_overlay_config(&overlay_config_path(&app));
+        create_overlay_window(&app, &config)?;
+    }
     if let Some(window) = app.get_webview_window("overlay") {
         window.show().map_err(|e| e.to_string())?;
-    } else {
-        return Err("Overlay-Fenster nicht verfügbar".into());
     }
     Ok(())
 }
@@ -539,7 +561,7 @@ fn open_overlay(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn close_overlay(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("overlay") {
-        window.hide().map_err(|e| e.to_string())?;
+        window.close().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -573,23 +595,7 @@ fn main() {
             app.manage(state);
 
             let overlay_config = load_overlay_config(&overlay_config_path(&app.handle()));
-            let overlay_url = format!("http://127.0.0.1:{}/livemap.html?overlay=1", http_server::HTTP_PORT)
-                .parse()
-                .unwrap();
-            let mut overlay_builder = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::External(overlay_url))
-                .title("SCUM Walker Overlay")
-                .inner_size(overlay_config.width.unwrap_or(450) as f64, overlay_config.height.unwrap_or(450) as f64)
-                .min_inner_size(200.0, 200.0)
-                .decorations(false)
-                .transparent(true)
-                .always_on_top(true)
-                .resizable(true)
-                .skip_taskbar(true)
-                .visible(false);
-            if let (Some(x), Some(y)) = (overlay_config.x, overlay_config.y) {
-                overlay_builder = overlay_builder.position(x as f64, y as f64);
-            }
-            let _ = overlay_builder.build();
+            let _ = create_overlay_window(&app.handle(), &overlay_config);
 
             Ok(())
         })

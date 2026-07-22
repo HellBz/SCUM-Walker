@@ -7,7 +7,10 @@
   <link rel="stylesheet" href="livemap.css?v=2">
 </head>
 <body>
-  <div id="dragHandle" title="Ziehen zum Verschieben">⋮⋮</div>
+  <div id="dragHandle" title="Ziehen zum Verschieben">
+    <span>SCUM Walker Overlay</span>
+    <button id="overlayClose" title="Overlay schließen">×</button>
+  </div>
   <div id="controls">
     <button id="zoomOut" title="Herauszoomen">−</button>
     <span id="zoomLabel">100%</span>
@@ -17,7 +20,6 @@
     <button id="fitBtn" title="Gesamte Karte anzeigen">⛶</button>
     <button id="toggleCoords" title="Koordinaten anzeigen/ausblenden">XY</button>
     <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft">
-    <button id="overlayClose" title="Overlay schließen">×</button>
   </div>
   <div id="mapShell">
     <canvas id="mapCanvas"></canvas>

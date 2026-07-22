@@ -8,11 +8,11 @@ const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const poiLabelsEl = document.getElementById('poiLabels');
 
-const params = new URLSearchParams(window.location.search);
 const isTauri = typeof window.__TAURI__ !== 'undefined';
-const isOverlayMode = isTauri || params.get('overlay') === '1';
-if (isOverlayMode) {
-  document.body.classList.add('overlay-mode');
+// Controls auto-hide by default for both Tauri overlay and browser/OBS usage.
+document.body.classList.add('auto-hide-controls');
+if (isTauri) {
+  document.body.classList.add('tauri-mode');
 }
 const closeBtn = document.getElementById('overlayClose');
 const opacitySlider = document.getElementById('opacitySlider');
@@ -54,6 +54,7 @@ if (dragHandle && currentWindow) {
   let dragWinStart = { x: 0, y: 0 };
 
   dragHandle.addEventListener('mousedown', async (e) => {
+    if (e.target.closest('#overlayClose')) return;
     e.preventDefault();
     dragging = true;
     dragMouseStart = { x: e.screenX, y: e.screenY };

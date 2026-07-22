@@ -61,57 +61,76 @@ html, body {
   padding: 4px 8px;
 }
 
-body.overlay-mode #controls {
+body.auto-hide-controls #controls {
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
-body.overlay-mode:hover #controls {
+body.auto-hide-controls:hover #controls {
   opacity: 1;
 }
 
-#controls #overlayClose,
 #controls #opacitySlider,
 #dragHandle {
   display: none;
 }
 
-body.overlay-mode #controls #overlayClose,
-body.overlay-mode #controls #opacitySlider,
-body.overlay-mode #dragHandle {
+body.tauri-mode #controls #opacitySlider,
+body.tauri-mode #dragHandle {
   display: flex;
 }
 
 #dragHandle {
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0;
   z-index: 110;
-  height: 14px;
-  width: 60px;
+  height: 24px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
+  gap: 8px;
   background: rgba(10, 15, 15, 0.85);
   border: 1px solid #00ffcc55;
   border-top: none;
-  border-radius: 0 0 6px 6px;
+  border-right: none;
+  border-radius: 0 0 0 6px;
   color: #00ffcc;
-  font-size: 10px;
+  font-size: 12px;
   cursor: move;
   user-select: none;
+  padding: 0 8px;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
-body.overlay-mode:hover #dragHandle,
+#dragHandle span {
+  font-weight: bold;
+  pointer-events: none;
+}
+
+#dragHandle button {
+  background: transparent;
+  border: 1px solid #555;
+  color: #aaa;
+  border-radius: 3px;
+  cursor: pointer;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+#dragHandle button:hover { border-color: #ff4444; color: #ff4444; }
+
+body.auto-hide-controls:hover #dragHandle,
 #dragHandle:hover {
   opacity: 1;
 }
 
-body:not(.overlay-mode) #overlayClose,
-body:not(.overlay-mode) #opacitySlider,
-body:not(.overlay-mode) #dragHandle {
+body:not(.tauri-mode) #overlayClose,
+body:not(.tauri-mode) #opacitySlider,
+body:not(.tauri-mode) #dragHandle {
   display: none;
 }
 
