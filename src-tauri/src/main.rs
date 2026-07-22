@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State};
+use tauri::webview::WebviewWindowBuilder;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
@@ -78,6 +79,7 @@ struct AppState {
     data: Mutex<AppData>,
     data_path: PathBuf,
     recording: Mutex<bool>,
+    overlay_window_label: Mutex<Option<String>>,
 }
 
 fn parse_clipboard(text: &str) -> Option<CoordRecord> {
@@ -390,6 +392,60 @@ fn get_poi_image_base64(state: State<Arc<AppState>>, id: String) -> Result<Strin
     Ok(BASE64_STANDARD.encode(bytes))
 }
 
+#[tauri::command]
+fn open_overlay(app: tauri::AppHandle, state: State<Arc<AppState>>) -> Result<(), String> {
+    let label = "overlay";
+    {
+        let mut stored = state.overlay_window_label.lock().unwrap();
+        if stored.is_some() {
+            return Err("Overlay ist bereits geöffnet".into());
+        }
+        *stored = Some(label.into());
+    }
+
+    let _window = WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::App("overlay.html".into()))
+        .title("SCUM Walker Overlay")
+        .inner_size(400.0, 400.0)
+        .min_inner_size(200.0, 200.0)
+        .max_inner_size(800.0, 800.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .resizable(true)
+        .visible(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn close_overlay(app: tauri::AppHandle, state: State<Arc<AppState>>) -> Result<(), String> {
+    let label = {
+        let mut stored = state.overlay_window_label.lock().unwrap();
+        stored.take()
+    };
+    if let Some(label) = label {
+        if let Some(window) = app.get_webview_window(&label) {
+            window.close().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_overlay_clickthrough(app: tauri::AppHandle, state: State<Arc<AppState>>, clickthrough: bool) -> Result<(), String> {
+    let label = state.overlay_window_label.lock().unwrap().clone();
+    if let Some(label) = label {
+        if let Some(window) = app.get_webview_window(&label) {
+            window.set_ignore_cursor_events(clickthrough).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(move |app| {
@@ -402,6 +458,7 @@ fn main() {
                 data: Mutex::new(data),
                 data_path,
                 recording: Mutex::new(false),
+                overlay_window_label: Mutex::new(None),
             });
 
             start_recorder(state.clone(), app.handle().clone());
@@ -420,7 +477,10 @@ fn main() {
             add_poi,
             remove_poi,
             paste_poi_screenshot,
-            get_poi_image_base64
+            get_poi_image_base64,
+            open_overlay,
+            close_overlay,
+            set_overlay_clickthrough
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

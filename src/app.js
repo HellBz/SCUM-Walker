@@ -503,6 +503,17 @@ document.getElementById('poiSave').addEventListener('click', async () => {
   pendingPoi = null;
 });
 
+// Overlay
+const overlayBtn = document.getElementById('openOverlay');
+overlayBtn.addEventListener('click', async () => {
+  try {
+    await invoke('open_overlay');
+    statusEl.textContent = 'Overlay geöffnet';
+  } catch (err) {
+    statusEl.textContent = 'Overlay: ' + err;
+  }
+});
+
 // Recording toggle
 const toggleBtn = document.getElementById('toggleRecording');
 toggleBtn.addEventListener('click', async () => {

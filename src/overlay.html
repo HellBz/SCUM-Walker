@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCUM Walker Overlay</title>
+  <link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+  <div id="overlayRoot">
+    <div id="dragHandle" data-tauri-drag-region>
+      <span>Live Map</span>
+      <div id="windowControls">
+        <button id="lockBtn" title="Klick-durchlässig schalten">🔒</button>
+        <button id="closeBtn" title="Schließen">×</button>
+      </div>
+    </div>
+
+    <div id="mapShell">
+      <div id="mapContainer">
+        <img src="scum_map-1080x1080.png" width="1080" height="1080" alt="SCUM Map">
+        <canvas id="mapCanvas" width="1080" height="1080"></canvas>
+      </div>
+      <div id="poiLabels"></div>
+    </div>
+
+    <div id="controls">
+      <button id="zoomOut">−</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomIn">+</button>
+      <input type="range" id="opacitySlider" min="20" max="100" value="80" title="Deckkraft">
+      <button id="centerBtn" title="Auf Position zentrieren">◎</button>
+    </div>
+
+    <div id="status">Warte auf Position...</div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>
