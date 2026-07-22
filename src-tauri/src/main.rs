@@ -453,6 +453,14 @@ fn close_overlay(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn set_overlay_clickthrough(app: tauri::AppHandle, clickthrough: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("overlay") {
+        window.set_ignore_cursor_events(clickthrough).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(move |app| {
@@ -472,17 +480,15 @@ fn main() {
             http_server::start_http_server(state.clone());
             app.manage(state);
 
-            let overlay_url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT)
-                .parse()
-                .unwrap();
-            let _ = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::External(overlay_url))
+            let _ = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::App("overlay.html".into()))
                 .title("SCUM Walker Overlay")
-                .inner_size(500.0, 500.0)
-                .min_inner_size(250.0, 250.0)
-                .decorations(true)
-                .transparent(false)
+                .inner_size(450.0, 450.0)
+                .min_inner_size(200.0, 200.0)
+                .decorations(false)
+                .transparent(true)
                 .always_on_top(true)
                 .resizable(true)
+                .skip_taskbar(true)
                 .visible(false)
                 .build();
 
@@ -504,7 +510,8 @@ fn main() {
             get_poi_image_base64,
             copy_livemap_url,
             open_overlay,
-            close_overlay
+            close_overlay,
+            set_overlay_clickthrough
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
