@@ -540,6 +540,15 @@ overlayBtn.addEventListener('click', async () => {
   }
 });
 
+document.getElementById('copyLivemapUrl').addEventListener('click', async () => {
+  try {
+    await invoke('copy_livemap_url');
+    statusEl.textContent = 'Live-Map-URL kopiert';
+  } catch (err) {
+    statusEl.textContent = 'URL: ' + err;
+  }
+});
+
 // Recording toggle
 const toggleBtn = document.getElementById('toggleRecording');
 toggleBtn.addEventListener('click', async () => {
