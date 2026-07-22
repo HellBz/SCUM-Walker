@@ -15,14 +15,14 @@
     <div id="status">Bereit</div>
 
     <div class="section">
-      <h3>Aufzeichnung</h3>
-      <button id="toggleRecording">Aufzeichnung starten</button>
+      <h3>Live-Map</h3>
+      <button id="openOverlay">In-Game Overlay öffnen</button>
       <div style="height:6px"></div>
-      <button id="newRoute">Neue Route</button>
-      <div style="height:6px"></div>
-      <button id="openOverlay">Live-Map Overlay</button>
-      <div style="height:6px"></div>
-      <button id="copyLivemapUrl">Live-Map URL kopieren</button>
+      <label class="url-label">URL für OBS/Browser:</label>
+      <div class="url-row">
+        <input id="livemapUrl" type="text" value="http://127.0.0.1:4488/livemap.html" readonly>
+        <button id="copyLivemapUrl" title="URL kopieren">⎘</button>
+      </div>
     </div>
 
     <div class="section">

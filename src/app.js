@@ -145,18 +145,12 @@ function updateUI() {
   renderLabels();
 }
 
-function updateGlobalRecordingButton() {
-  const toggleBtn = document.getElementById('toggleRecording');
-  toggleBtn.textContent = isRecording ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten';
-}
-
 async function syncRecordingState() {
   try {
     isRecording = await invoke('is_recording');
   } catch (err) {
     isRecording = false;
   }
-  updateGlobalRecordingButton();
 }
 
 function renderRouteList() {
@@ -499,7 +493,6 @@ function openRouteDialog() {
   routeNameInput.select();
 }
 
-document.getElementById('newRoute').addEventListener('click', openRouteDialog);
 document.getElementById('addRouteBtn').addEventListener('click', openRouteDialog);
 
 routeColorPicker.addEventListener('input', (e) => {
@@ -581,18 +574,7 @@ document.getElementById('copyLivemapUrl').addEventListener('click', async () => 
   }
 });
 
-// Recording toggle
-const toggleBtn = document.getElementById('toggleRecording');
-toggleBtn.addEventListener('click', async () => {
-  if (!data.current_route_id) {
-    statusEl.textContent = 'Bitte zuerst eine Route erstellen.';
-    return;
-  }
-  isRecording = await invoke('toggle_recording');
-  updateGlobalRecordingButton();
-  statusEl.textContent = isRecording ? 'Aufzeichnung läuft...' : 'Aufzeichnung pausiert';
-  updateUI();
-});
+// Global recording state is controlled per route via the route list icons
 
 // Live updates
 if (window.__TAURI__.event) {

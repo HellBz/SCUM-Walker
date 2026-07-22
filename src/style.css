@@ -134,6 +134,49 @@ button:hover { background: #3a3a3a; }
 
 .icon-btn:hover { background: #00ffcc22; }
 
+.url-label {
+  font-size: 11px;
+  color: #aaa;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#livemapUrl {
+  flex: 1;
+  background: #151515;
+  border: 1px solid #555;
+  color: #00ffcc;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#copyLivemapUrl {
+  background: transparent;
+  border: 1px solid #555;
+  color: #aaa;
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#copyLivemapUrl:hover { border-color: #00ffcc; color: #00ffcc; }
+
 #mapCanvas {
   position: absolute;
   top: 0;
