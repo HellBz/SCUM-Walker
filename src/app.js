@@ -157,38 +157,37 @@ function renderRouteList() {
       <span class="route-color" style="background:${route.color || '#888'}"></span>
       <span class="route-name">${escapeHtml(route.name)}</span>
       <span class="route-actions">
-        <span class="route-rename" data-id="${route.id}">umbenennen</span>
-        ${isCurrent ? '' : '<span class="route-select" data-id="' + route.id + '">aktivieren</span>'}
-        <span class="route-delete" data-id="${route.id}">löschen</span>
+        <button class="route-icon ${isCurrent ? 'active' : ''}" data-action="activate" data-id="${route.id}" title="Aktivieren">◎</button>
+        <button class="route-icon ${route.visible === false ? 'hidden' : ''}" data-action="toggle-visibility" data-id="${route.id}" title="${route.visible === false ? 'Einblenden' : 'Ausblenden'}">${route.visible === false ? '✘' : '👁'}</button>
+        <button class="route-icon" data-action="rename" data-id="${route.id}" title="Umbenennen">✎</button>
+        <button class="route-icon" data-action="delete" data-id="${route.id}" title="Löschen">🗑</button>
       </span>
       <span class="route-count">${route.records.length} Punkte</span>
     `;
     routeListEl.appendChild(div);
   });
 
-  routeListEl.querySelectorAll('.route-select').forEach(el => {
-    el.addEventListener('click', async () => {
-      data = await invoke('select_route', { id: el.dataset.id });
-      updateUI();
-    });
-  });
-
-  routeListEl.querySelectorAll('.route-rename').forEach(el => {
-    el.addEventListener('click', async () => {
+  routeListEl.querySelectorAll('.route-icon').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const action = el.dataset.action;
       const id = el.dataset.id;
-      const route = data.routes.find(r => r.id === id);
-      if (!route) return;
-      const newName = prompt('Neuer Name:', route.name);
-      if (newName) {
-        data = await invoke('rename_route', { id, name: newName });
-        updateUI();
+      if (action === 'activate') {
+        data = await invoke('select_route', { id });
+      } else if (action === 'toggle-visibility') {
+        data = await invoke('toggle_route_visibility', { id });
+      } else if (action === 'rename') {
+        const route = data.routes.find(r => r.id === id);
+        if (!route) return;
+        const newName = prompt('Neuer Name:', route.name);
+        if (newName) data = await invoke('rename_route', { id, name: newName });
+      } else if (action === 'delete') {
+        if (confirm('Route wirklich löschen?')) {
+          data = await invoke('delete_route', { id });
+        } else {
+          return;
+        }
       }
-    });
-  });
-
-  routeListEl.querySelectorAll('.route-delete').forEach(el => {
-    el.addEventListener('click', async () => {
-      data = await invoke('delete_route', { id: el.dataset.id });
       updateUI();
     });
   });
@@ -196,7 +195,7 @@ function renderRouteList() {
   routeListEl.querySelectorAll('.route-color').forEach(el => {
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const id = el.closest('.route-item').querySelector('.route-rename').dataset.id;
+      const id = el.closest('.route-item').querySelector('.route-icon').dataset.id;
       const route = data.routes.find(r => r.id === id);
       if (!route) return;
       const nextIndex = (ROUTE_COLORS.indexOf(route.color) + 1) % ROUTE_COLORS.length;
@@ -275,6 +274,7 @@ function draw() {
   }
 
   data.routes.forEach(route => {
+    if (route.visible === false) return;
     const isCurrent = route.id === data.current_route_id;
     const color = route.color || '#888';
 
@@ -457,7 +457,7 @@ document.addEventListener('mouseup', (e) => {
 });
 
 // Route dialog
-document.getElementById('newRoute').addEventListener('click', () => {
+function openRouteDialog() {
   routeNameInput.value = `Route ${data.routes.length + 1}`;
   selectedRouteColor = ROUTE_COLORS[data.routes.length % ROUTE_COLORS.length];
   routeColorPicker.value = selectedRouteColor;
@@ -465,7 +465,10 @@ document.getElementById('newRoute').addEventListener('click', () => {
   routeDialog.classList.add('open');
   routeNameInput.focus();
   routeNameInput.select();
-});
+}
+
+document.getElementById('newRoute').addEventListener('click', openRouteDialog);
+document.getElementById('addRouteBtn').addEventListener('click', openRouteDialog);
 
 routeColorPicker.addEventListener('input', (e) => {
   selectedRouteColor = e.target.value.toLowerCase();

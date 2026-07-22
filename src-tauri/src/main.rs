@@ -38,11 +38,15 @@ struct CoordRecord {
 
 const ROUTE_COLORS: &[&str] = &["#00ffcc", "#ff8800", "#4488ff", "#ff44d3", "#ffee00", "#44cc44", "#ff4444", "#ffffff"];
 
+fn default_true() -> bool { true }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Route {
     id: String,
     name: String,
     color: String,
+    #[serde(default = "default_true")]
+    visible: bool,
     records: Vec<CoordRecord>,
 }
 
@@ -52,6 +56,7 @@ impl Route {
             id: format!("{}", Utc::now().timestamp_millis()),
             name,
             color,
+            visible: true,
             records: Vec::new(),
         }
     }
@@ -356,6 +361,16 @@ fn set_route_color(state: State<Arc<AppState>>, id: String, color: String) -> Ap
 }
 
 #[tauri::command]
+fn toggle_route_visibility(state: State<Arc<AppState>>, id: String) -> AppData {
+    let mut data = state.data.lock().unwrap();
+    if let Some(route) = data.routes.iter_mut().find(|r| r.id == id) {
+        route.visible = !route.visible;
+        save_data(&state.data_path, &data);
+    }
+    data.clone()
+}
+
+#[tauri::command]
 fn toggle_recording(state: State<Arc<AppState>>) -> bool {
     let mut recording = state.recording.lock().unwrap();
     *recording = !*recording;
@@ -481,6 +496,7 @@ fn main() {
             rename_route,
             delete_route,
             set_route_color,
+            toggle_route_visibility,
             toggle_recording,
             add_poi,
             remove_poi,

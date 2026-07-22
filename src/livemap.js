@@ -77,6 +77,7 @@ function draw() {
 
   if (data.routes) {
     data.routes.forEach(route => {
+      if (route.visible === false) return;
       const isCurrent = route.id === data.current_route_id;
       const color = route.color || '#888';
       if (!route.records || route.records.length < 2) return;
