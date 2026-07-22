@@ -7,14 +7,15 @@
   <link rel="stylesheet" href="livemap.css">
 </head>
 <body>
-  <div id="controls" data-tauri-drag-region>
+  <div id="dragHandle" title="Ziehen zum Verschieben">⋮⋮</div>
+  <div id="controls">
     <button id="zoomOut" title="Herauszoomen">−</button>
     <span id="zoomLabel">100%</span>
     <button id="zoomIn" title="Hineinzoomen">+</button>
     <button id="centerBtn" title="Auf aktuelle Position zentrieren">◎</button>
     <button id="fitBtn" title="Gesamte Karte anzeigen">⛶</button>
-    <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft" data-tauri-no-drag-region>
-    <button id="overlayClose" title="Overlay schließen" data-tauri-no-drag-region>×</button>
+    <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft">
+    <button id="overlayClose" title="Overlay schließen">×</button>
   </div>
   <div id="mapShell">
     <canvas id="mapCanvas"></canvas>

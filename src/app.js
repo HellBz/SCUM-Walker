@@ -570,6 +570,15 @@ overlayBtn.addEventListener('click', async () => {
   }
 });
 
+document.getElementById('closeOverlay').addEventListener('click', async () => {
+  try {
+    await invoke('close_overlay');
+    statusEl.textContent = 'Overlay geschlossen';
+  } catch (err) {
+    statusEl.textContent = 'Overlay: ' + err;
+  }
+});
+
 document.getElementById('copyLivemapUrl').addEventListener('click', async () => {
   try {
     await invoke('copy_livemap_url');

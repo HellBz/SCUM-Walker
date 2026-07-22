@@ -177,6 +177,15 @@ button:hover { background: #3a3a3a; }
 
 #copyLivemapUrl:hover { border-color: #00ffcc; color: #00ffcc; }
 
+.button-row {
+  display: flex;
+  gap: 6px;
+}
+
+.button-row button {
+  flex: 1;
+}
+
 #mapCanvas {
   position: absolute;
   top: 0;

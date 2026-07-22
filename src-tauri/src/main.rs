@@ -570,6 +570,15 @@ fn main() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    if let Some(overlay) = window.app_handle().get_webview_window("overlay") {
+                        let _ = overlay.close();
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_data,
             get_current_location,

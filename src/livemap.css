@@ -70,17 +70,46 @@ body.overlay-mode:hover #controls {
   opacity: 1;
 }
 
-#overlayClose, #opacitySlider {
+#overlayClose, #opacitySlider, #dragHandle {
   display: none;
 }
 
 body.overlay-mode #overlayClose,
-body.overlay-mode #opacitySlider {
+body.overlay-mode #opacitySlider,
+body.overlay-mode #dragHandle {
   display: flex;
 }
 
+#dragHandle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 110;
+  height: 14px;
+  width: 60px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 15, 15, 0.85);
+  border: 1px solid #00ffcc55;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  color: #00ffcc;
+  font-size: 10px;
+  cursor: move;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+body.overlay-mode:hover #dragHandle,
+#dragHandle:hover {
+  opacity: 1;
+}
+
 body:not(.overlay-mode) #overlayClose,
-body:not(.overlay-mode) #opacitySlider {
+body:not(.overlay-mode) #opacitySlider,
+body:not(.overlay-mode) #dragHandle {
   display: none;
 }
 

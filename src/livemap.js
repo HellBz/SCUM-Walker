@@ -1,4 +1,8 @@
-const mapShell = document.getElementById('mapShell');
+(function() {
+  if (window.__scumWalkerLiveMapLoaded) return;
+  window.__scumWalkerLiveMapLoaded = true;
+
+  const mapShell = document.getElementById('mapShell');
 const canvas = document.getElementById('mapCanvas');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
@@ -12,24 +16,65 @@ if (isOverlayMode) {
 }
 const closeBtn = document.getElementById('overlayClose');
 const opacitySlider = document.getElementById('opacitySlider');
+const dragHandle = document.getElementById('dragHandle');
+
+let currentWindow = null;
+if (isTauri) {
+  try {
+    currentWindow = window.__TAURI__.window.getCurrentWindow();
+  } catch (e) { currentWindow = null; }
+}
+
+async function saveOverlayState() {
+  if (!currentWindow) return;
+  try {
+    const size = await currentWindow.innerSize();
+    const pos = await currentWindow.outerPosition();
+    await window.__TAURI__.core.invoke('save_overlay_config', {
+      config: { x: pos.x, y: pos.y, width: size.width, height: size.height }
+    });
+  } catch (err) { console.error(err); }
+}
 
 if (closeBtn) {
   closeBtn.addEventListener('click', async () => {
+    await saveOverlayState();
     if (isTauri) {
-      try {
-        const { getCurrentWindow } = window.__TAURI__.window;
-        const currentWindow = getCurrentWindow();
-        const size = await currentWindow.innerSize();
-        const pos = await currentWindow.outerPosition();
-        await window.__TAURI__.core.invoke('save_overlay_config', {
-          config: { x: pos.x, y: pos.y, width: size.width, height: size.height }
-        });
-        await window.__TAURI__.core.invoke('close_overlay');
-      } catch (err) {
-        window.close();
-      }
+      try { await window.__TAURI__.core.invoke('close_overlay'); } catch (err) { window.close(); }
     } else {
       window.close();
+    }
+  });
+}
+
+if (dragHandle && currentWindow) {
+  let dragging = false;
+  let dragMouseStart = { x: 0, y: 0 };
+  let dragWinStart = { x: 0, y: 0 };
+
+  dragHandle.addEventListener('mousedown', async (e) => {
+    e.preventDefault();
+    dragging = true;
+    dragMouseStart = { x: e.screenX, y: e.screenY };
+    try {
+      const pos = await currentWindow.outerPosition();
+      dragWinStart = { x: pos.x, y: pos.y };
+    } catch (err) { console.error(err); }
+  });
+
+  window.addEventListener('mousemove', async (e) => {
+    if (!dragging) return;
+    const dx = e.screenX - dragMouseStart.x;
+    const dy = e.screenY - dragMouseStart.y;
+    try {
+      await currentWindow.setPosition({ type: 'Physical', x: dragWinStart.x + dx, y: dragWinStart.y + dy });
+    } catch (err) { console.error(err); }
+  });
+
+  window.addEventListener('mouseup', async () => {
+    if (dragging) {
+      dragging = false;
+      await saveOverlayState();
     }
   });
 }
@@ -280,8 +325,31 @@ window.addEventListener('resize', resizeCanvas);
 
 mapImg = new Image();
 mapImg.src = API_BASE + '/map.png';
-mapImg.onload = () => { resizeCanvas(); fitAll(); };
+mapImg.onload = () => {
+  resizeCanvas();
+  const savedZoom = parseFloat(safeGetStorage('livemap.zoom', ''));
+  if (!isNaN(savedZoom) && savedZoom >= ZOOM_MIN && savedZoom <= ZOOM_MAX) {
+    zoom = savedZoom;
+    updateZoomLabel();
+    if (currentPos) centerOnCurrentPos();
+    else draw();
+  } else {
+    fitAll();
+  }
+};
 mapImg.onerror = () => { resizeCanvas(); fitAll(); };
+
+mapShell.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const step = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat((zoom + step).toFixed(2))));
+  saveZoom();
+  updateZoomLabel();
+  if (currentPos) centerOnCurrentPos();
+  else draw();
+}, { passive: false });
 
 fetchData();
 setInterval(fetchData, 2000);
+
+})();
