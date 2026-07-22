@@ -7,12 +7,13 @@
   <link rel="stylesheet" href="livemap.css">
 </head>
 <body>
-  <div id="controls">
+  <div id="controls" data-tauri-drag-region>
     <button id="zoomOut" title="Herauszoomen">−</button>
     <span id="zoomLabel">100%</span>
     <button id="zoomIn" title="Hineinzoomen">+</button>
     <button id="centerBtn" title="Auf aktuelle Position zentrieren">◎</button>
     <button id="fitBtn" title="Gesamte Karte anzeigen">⛶</button>
+    <button id="overlayClose" title="Overlay schließen">×</button>
   </div>
   <div id="mapShell">
     <canvas id="mapCanvas"></canvas>

@@ -61,6 +61,23 @@ html, body {
   padding: 4px 8px;
 }
 
+body.overlay-mode #controls {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+body.overlay-mode:hover #controls {
+  opacity: 1;
+}
+
+#overlayClose {
+  display: none;
+}
+
+body.overlay-mode #overlayClose {
+  display: flex;
+}
+
 #controls button {
   width: 26px;
   height: 22px;

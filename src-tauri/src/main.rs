@@ -480,7 +480,7 @@ fn main() {
             http_server::start_http_server(state.clone());
             app.manage(state);
 
-            let _ = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::App("overlay.html".into()))
+            let _ = WebviewWindowBuilder::new(app.handle(), "overlay", tauri::WebviewUrl::App("livemap.html".into()))
                 .title("SCUM Walker Overlay")
                 .inner_size(450.0, 450.0)
                 .min_inner_size(200.0, 200.0)

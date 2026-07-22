@@ -4,6 +4,19 @@ const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const poiLabelsEl = document.getElementById('poiLabels');
 
+const isTauri = typeof window.__TAURI__ !== 'undefined';
+if (isTauri) {
+  document.body.classList.add('overlay-mode');
+  const closeBtn = document.getElementById('overlayClose');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      window.__TAURI__.core.invoke('close_overlay');
+    });
+  }
+}
+
+const API_BASE = isTauri ? 'http://127.0.0.1:4488' : '';
+
 const MAP_SIZE = 1080;
 const worldMinX = -904800;
 const worldMaxX = 616818;
@@ -171,7 +184,7 @@ function centerOnCurrentPos() {
 
 async function fetchData() {
   try {
-    const res = await fetch('/api/data');
+    const res = await fetch(API_BASE + '/api/data');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const payload = await res.json();
     data = payload.data || payload;
@@ -223,7 +236,7 @@ document.getElementById('fitBtn').addEventListener('click', fitAll);
 window.addEventListener('resize', resizeCanvas);
 
 mapImg = new Image();
-mapImg.src = '/map.png';
+mapImg.src = API_BASE + '/map.png';
 mapImg.onload = () => {
   resizeCanvas();
   fitAll();
