@@ -45,7 +45,8 @@ pub fn start_http_server(state: Arc<AppState>) {
         };
 
         for request in server.incoming_requests() {
-            let response = match (request.method(), request.url()) {
+            let path = request.url().split('?').next().unwrap_or("/");
+            let response = match (request.method(), path) {
                 (&Method::Get, "/" | "/livemap" | "/livemap.html") => {
                     text_response(LIVEMAP_HTML, "text/html; charset=utf-8")
                 }

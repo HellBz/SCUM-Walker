@@ -2,8 +2,16 @@ const { invoke } = window.__TAURI__.core;
 
 const lockBtn = document.getElementById('lockBtn');
 const closeBtn = document.getElementById('closeBtn');
+const opacitySlider = document.getElementById('opacitySlider');
+const mapFrame = document.getElementById('mapFrame');
 
 let clickthrough = false;
+
+if (opacitySlider && mapFrame) {
+  opacitySlider.addEventListener('input', () => {
+    mapFrame.style.opacity = (opacitySlider.value / 100).toString();
+  });
+}
 
 lockBtn.addEventListener('click', async () => {
   clickthrough = !clickthrough;

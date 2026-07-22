@@ -54,7 +54,8 @@
 <body>
   <div id="bar" data-tauri-drag-region>
     <span data-tauri-drag-region>SCUM Walker Overlay</span>
-    <div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft" style="width:70px;height:14px;">
       <button id="lockBtn" title="Klick-durchlässig umschalten">🔒</button>
       <button id="closeBtn" title="Ausblenden">×</button>
     </div>
