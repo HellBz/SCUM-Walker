@@ -72,14 +72,12 @@ body.overlay-mode:hover #controls {
 
 #controls #overlayClose,
 #controls #opacitySlider,
-#controls #toggleCoords,
 #dragHandle {
   display: none;
 }
 
 body.overlay-mode #controls #overlayClose,
 body.overlay-mode #controls #opacitySlider,
-body.overlay-mode #controls #toggleCoords,
 body.overlay-mode #dragHandle {
   display: flex;
 }

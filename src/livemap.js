@@ -113,11 +113,7 @@ if (followBtn) {
 
 function updateCoordsVisibility() {
   if (!statusEl) return;
-  if (!isOverlayMode) {
-    statusEl.style.display = 'block';
-  } else {
-    statusEl.style.display = showCoords ? 'block' : 'none';
-  }
+  statusEl.style.display = showCoords ? 'block' : 'none';
 }
 updateCoordsVisibility();
 
@@ -376,7 +372,6 @@ document.getElementById('zoomOut').addEventListener('click', () => {
 });
 
 document.getElementById('centerBtn').addEventListener('click', () => {
-  enableFollow();
   centerOnCurrentPos();
 });
 
@@ -413,6 +408,34 @@ mapShell.addEventListener('wheel', (e) => {
   if (currentPos) centerOnCurrentPos();
   else draw();
 }, { passive: false });
+
+let isPanning = false;
+let panStartX = 0;
+let panStartY = 0;
+let panStartPanX = 0;
+let panStartPanY = 0;
+
+mapShell.addEventListener('mousedown', (e) => {
+  isPanning = true;
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+  panStartPanX = panX;
+  panStartPanY = panY;
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!isPanning) return;
+  panX = panStartPanX + (e.clientX - panStartX);
+  panY = panStartPanY + (e.clientY - panStartY);
+  draw();
+});
+
+window.addEventListener('mouseup', () => {
+  if (isPanning) {
+    isPanning = false;
+    disableFollow();
+  }
+});
 
 fetchData();
 setInterval(fetchData, 2000);
