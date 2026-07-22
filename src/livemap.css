@@ -70,11 +70,12 @@ body.overlay-mode:hover #controls {
   opacity: 1;
 }
 
-#overlayClose {
+#overlayClose, #opacitySlider {
   display: none;
 }
 
-body.overlay-mode #overlayClose {
+body.overlay-mode #overlayClose,
+body.overlay-mode #opacitySlider {
   display: flex;
 }
 

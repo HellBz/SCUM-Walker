@@ -12,12 +12,47 @@ if (isOverlayMode) {
 }
 if (isTauri) {
   const closeBtn = document.getElementById('overlayClose');
+  const opacitySlider = document.getElementById('opacitySlider');
+  const { getCurrentWindow } = window.__TAURI__.window;
+  const currentWindow = getCurrentWindow();
+
+  async function saveOverlayState() {
+    try {
+      const size = await currentWindow.innerSize();
+      const pos = await currentWindow.outerPosition();
+      await window.__TAURI__.core.invoke('save_overlay_config', {
+        config: { x: pos.x, y: pos.y, width: size.width, height: size.height }
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
+    closeBtn.addEventListener('click', async () => {
+      await saveOverlayState();
       window.__TAURI__.core.invoke('close_overlay');
     });
   }
+
+  if (opacitySlider) {
+    const savedOpacity = safeGetStorage('overlay.opacity', null);
+    if (savedOpacity !== null) {
+      opacitySlider.value = savedOpacity;
+      document.body.style.opacity = (savedOpacity / 100).toString();
+    }
+    opacitySlider.addEventListener('input', () => {
+      const value = opacitySlider.value;
+      document.body.style.opacity = (value / 100).toString();
+      safeSetStorage('overlay.opacity', value);
+    });
+  }
 }
+
+window.onerror = function(msg, url, line) {
+  statusEl.textContent = 'JS-Fehler: ' + msg + ' (' + line + ')';
+  return false;
+};
 
 const API_BASE = isTauri ? 'http://127.0.0.1:4488' : '';
 
