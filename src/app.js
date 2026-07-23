@@ -364,6 +364,28 @@ function draw() {
     ctx.strokeStyle = '#00ffccaa';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    if (typeof currentCoord.yaw === 'number') {
+      const len = 12000;
+      const yawRad = currentCoord.yaw * Math.PI / 180;
+      const end = worldToScreen(currentCoord.x + len * Math.cos(yawRad), currentCoord.y + len * Math.sin(yawRad));
+      const angle = Math.atan2(end.y - pt.y, end.x - pt.x);
+      ctx.beginPath();
+      ctx.moveTo(pt.x, pt.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const headLen = 10;
+      ctx.beginPath();
+      ctx.moveTo(end.x, end.y);
+      ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 6), end.y - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 6), end.y - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = '#00ffcc';
+      ctx.fill();
+    }
   }
 }
 

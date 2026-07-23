@@ -545,10 +545,6 @@ fn copy_livemap_url() -> Result<(), String> {
 
 #[tauri::command]
 fn open_overlay(app: tauri::AppHandle) -> Result<(), String> {
-    if app.get_webview_window("overlay").is_none() {
-        let config = load_overlay_config(&overlay_config_path(&app));
-        create_overlay_window(&app, &config)?;
-    }
     if let Some(window) = app.get_webview_window("overlay") {
         window.show().map_err(|e| e.to_string())?;
     }
@@ -558,7 +554,7 @@ fn open_overlay(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn close_overlay(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("overlay") {
-        window.close().map_err(|e| e.to_string())?;
+        window.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
