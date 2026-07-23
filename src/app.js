@@ -641,16 +641,17 @@ document.getElementById('resetOverlayPosition').addEventListener('click', async 
   }
 });
 
-let overlayClickthrough = false;
-const overlayClickthroughBtn = document.getElementById('toggleOverlayClickthrough');
-overlayClickthroughBtn.addEventListener('click', async () => {
+let overlayLocked = false;
+const lockOverlayBtn = document.getElementById('lockOverlay');
+lockOverlayBtn.addEventListener('click', async () => {
   try {
-    overlayClickthrough = !overlayClickthrough;
-    await invoke('set_overlay_clickthrough', { clickthrough: overlayClickthrough });
-    overlayClickthroughBtn.textContent = overlayClickthrough ? 'Overlay: nur Bild (nicht klickbar)' : 'Overlay: klickbar';
-    statusEl.textContent = overlayClickthrough ? 'Overlay ignoriert Maus (klick-durch)' : 'Overlay reagiert auf Maus';
+    overlayLocked = !overlayLocked;
+    await invoke('set_overlay_clickthrough', { clickthrough: overlayLocked });
+    lockOverlayBtn.textContent = overlayLocked ? '🔓' : '🔒';
+    lockOverlayBtn.title = overlayLocked ? 'Overlay entsperren' : 'Overlay sperren / Klick-durch';
+    statusEl.textContent = overlayLocked ? 'Overlay gesperrt (Klick-durch)' : 'Overlay entsperrt';
   } catch (err) {
-    statusEl.textContent = 'Overlay-Klick: ' + err;
+    statusEl.textContent = 'Overlay-Lock: ' + err;
   }
 });
 
