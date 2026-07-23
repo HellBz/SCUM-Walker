@@ -37,6 +37,7 @@ let pendingPoi = null;
 
 let data = { routes: [], current_route_id: null, pois: [] };
 let isRecording = false;
+let currentCoord = null;
 
 // Zoom / Pan state
 const ZOOM_MIN = 0.5;
@@ -347,6 +348,23 @@ function draw() {
     ctx.lineWidth = 1;
     ctx.stroke();
   });
+
+  if (currentCoord) {
+    const pt = worldToScreen(currentCoord.x, currentCoord.y);
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 8, 0, 2 * Math.PI);
+    ctx.fillStyle = '#00ffcc';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 14, 0, 2 * Math.PI);
+    ctx.strokeStyle = '#00ffccaa';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 }
 
 function renderLabels() {
@@ -623,17 +641,31 @@ document.getElementById('resetOverlayPosition').addEventListener('click', async 
   }
 });
 
+let overlayClickthrough = false;
+const overlayClickthroughBtn = document.getElementById('toggleOverlayClickthrough');
+overlayClickthroughBtn.addEventListener('click', async () => {
+  try {
+    overlayClickthrough = !overlayClickthrough;
+    await invoke('set_overlay_clickthrough', { clickthrough: overlayClickthrough });
+    overlayClickthroughBtn.textContent = overlayClickthrough ? 'Overlay: nur Bild (nicht klickbar)' : 'Overlay: klickbar';
+    statusEl.textContent = overlayClickthrough ? 'Overlay ignoriert Maus (klick-durch)' : 'Overlay reagiert auf Maus';
+  } catch (err) {
+    statusEl.textContent = 'Overlay-Klick: ' + err;
+  }
+});
+
 // Global recording state is controlled per route via the route list icons
 
 // Live updates
 if (window.__TAURI__.event) {
   window.__TAURI__.event.listen('coord-update', (event) => {
+    currentCoord = event.payload;
     const route = getCurrentRoute();
-    if (route) {
+    if (route && isRecording) {
       route.records.push(event.payload);
-      statusEl.textContent = `Letzte Koordinate: X=${event.payload.x.toFixed(0)} Y=${event.payload.y.toFixed(0)}`;
-      updateUI();
     }
+    statusEl.textContent = `Letzte Koordinate: X=${event.payload.x.toFixed(0)} Y=${event.payload.y.toFixed(0)}`;
+    updateUI();
   });
 }
 
