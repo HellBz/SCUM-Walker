@@ -168,10 +168,6 @@ const ZOOM_MAX = 8.0;
 const ZOOM_STEP = 0.25;
 
 let zoom = parseFloat(safeGetStorage('livemap.zoom', '1.5')) || 1.5;
-const urlZoom = parseFloat(params.get('zoom'));
-if (!isNaN(urlZoom) && urlZoom >= ZOOM_MIN && urlZoom <= ZOOM_MAX) {
-  zoom = urlZoom;
-}
 let panX = 0;
 let panY = 0;
 let data = { routes: [], current_route_id: null, pois: [] };

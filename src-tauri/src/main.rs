@@ -463,10 +463,7 @@ struct OverlayConfig {
 }
 
 fn create_overlay_window(app: &tauri::AppHandle, config: &OverlayConfig) -> Result<tauri::WebviewWindow, String> {
-    let overlay_url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT)
-        .parse()
-        .unwrap();
-    let mut overlay_builder = WebviewWindowBuilder::new(app, "overlay", tauri::WebviewUrl::External(overlay_url))
+    let mut overlay_builder = WebviewWindowBuilder::new(app, "overlay", tauri::WebviewUrl::App("overlay.html".into()))
         .title("SCUM Walker Overlay")
         .inner_size(config.width.unwrap_or(450) as f64, config.height.unwrap_or(450) as f64)
         .min_inner_size(200.0, 200.0)
