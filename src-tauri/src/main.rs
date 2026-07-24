@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use arboard::Clipboard;
 use chrono::{DateTime, Utc};
 use regex::Regex;
