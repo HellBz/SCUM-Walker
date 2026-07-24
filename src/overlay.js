@@ -6,6 +6,16 @@ const opacitySlider = document.getElementById('opacitySlider');
 const mapFrame = document.getElementById('mapFrame');
 const currentWindow = getCurrentWindow();
 
+// Set iframe src dynamically from actual server port
+(async () => {
+  try {
+    const url = await invoke('get_livemap_url');
+    if (url && mapFrame) mapFrame.src = url;
+  } catch (err) {
+    console.error('Failed to get livemap URL:', err);
+  }
+})();
+
 function applyOpacity(value) {
   if (mapFrame) mapFrame.style.opacity = (value / 100).toString();
 }

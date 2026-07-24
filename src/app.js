@@ -74,6 +74,8 @@ async function fetchTileBaseUrl() {
     if (url) {
       const u = new URL(url);
       tileBaseUrl = `${u.protocol}//${u.host}`;
+      const livemapUrlInput = document.getElementById('livemapUrl');
+      if (livemapUrlInput) livemapUrlInput.value = url;
     }
   } catch {}
 }

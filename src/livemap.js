@@ -130,7 +130,7 @@
     return false;
   };
 
-  const API_BASE = 'http://127.0.0.1:4488';
+  const API_BASE = window.location.origin;
 
   // World bounds in SCUM game coordinates
   const worldMinX = -904800;

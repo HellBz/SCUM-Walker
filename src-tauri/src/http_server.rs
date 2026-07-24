@@ -18,6 +18,7 @@ const TILES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles");
 const LIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib");
 const LEAFLET_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.css"));
 const LEAFLET_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.js"));
+const FAVICON_PNG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/favicon.png"));
 
 pub static HTTP_PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
 
@@ -76,6 +77,7 @@ pub fn start_http_server(state: Arc<AppState>) {
                 (&Method::Get, "/livemap.js") => text_response(LIVEMAP_JS, "application/javascript"),
                 (&Method::Get, "/lib/leaflet.css") => text_response(LEAFLET_CSS, "text/css"),
                 (&Method::Get, "/lib/leaflet.js") => text_response(LEAFLET_JS, "application/javascript"),
+                (&Method::Get, "/favicon.png") => bytes_response(FAVICON_PNG, "image/png"),
                 (&Method::Get, path) if path.starts_with("/tiles/") => {
                     // Serve tile: /tiles/{z}/{x}/{y}.png
                     let parts: Vec<&str> = path.strip_prefix("/tiles/").unwrap().split('/').collect();
