@@ -4,9 +4,7 @@ use arboard::Clipboard;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
 use std::fs;
-use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -15,16 +13,26 @@ use tauri::{Emitter, Manager, State};
 use tauri::webview::WebviewWindowBuilder;
 
 mod http_server;
+
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
 use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
+#[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
     GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
     SRCCOPY,
 };
+#[cfg(windows)]
 use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
+#[cfg(windows)]
 use windows::Win32::System::Threading::{
     OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
 };
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
     PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP,
@@ -145,6 +153,7 @@ fn save_data(path: &PathBuf, data: &AppData) {
     }
 }
 
+#[cfg(windows)]
 fn find_scum_window_by_title() -> Option<HWND> {
     for title in SCUM_WINDOW_TITLES {
         let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
@@ -156,6 +165,7 @@ fn find_scum_window_by_title() -> Option<HWND> {
     None
 }
 
+#[cfg(windows)]
 unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> windows::Win32::Foundation::BOOL {
     if !IsWindowVisible(hwnd).as_bool() {
         return true.into();
@@ -184,6 +194,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> wi
     true.into()
 }
 
+#[cfg(windows)]
 fn find_scum_window_by_process() -> Option<HWND> {
     let mut result: HWND = HWND(0);
     unsafe {
@@ -192,32 +203,37 @@ fn find_scum_window_by_process() -> Option<HWND> {
     if result.0 == 0 { None } else { Some(result) }
 }
 
+#[cfg(windows)]
 fn find_scum_window() -> Option<HWND> {
     find_scum_window_by_title().or_else(find_scum_window_by_process)
 }
 
+#[cfg(not(windows))]
+fn find_scum_window() -> Option<()> { None }
+
+#[cfg(windows)]
 fn focus_scum_window() {
     if let Some(hwnd) = find_scum_window() {
         unsafe { let _ = SetForegroundWindow(hwnd); }
     }
 }
 
+#[cfg(not(windows))]
+fn focus_scum_window() {}
+
+#[cfg(windows)]
 const VK_CONTROL: u16 = 0x11;
+#[cfg(windows)]
 const VK_C: u16 = 0x43;
 
+#[cfg(windows)]
 fn post_key(hwnd: HWND, vk: u16, msg: u32) {
     unsafe {
         let _ = PostMessageW(hwnd, msg, windows::Win32::Foundation::WPARAM(vk as usize), windows::Win32::Foundation::LPARAM(0));
     }
 }
 
-fn tap_key(hwnd: HWND, vk: u16) {
-    post_key(hwnd, vk, WM_KEYDOWN);
-    std::thread::sleep(Duration::from_millis(30));
-    post_key(hwnd, vk, WM_KEYUP);
-    std::thread::sleep(Duration::from_millis(30));
-}
-
+#[cfg(windows)]
 fn post_ctrl_c(hwnd: HWND) {
     post_key(hwnd, VK_CONTROL, WM_KEYDOWN);
     std::thread::sleep(Duration::from_millis(20));
@@ -228,12 +244,19 @@ fn post_ctrl_c(hwnd: HWND) {
     post_key(hwnd, VK_CONTROL, WM_KEYUP);
 }
 
+#[cfg(windows)]
 fn send_ctrl_c_to_scum() -> Result<(), String> {
     let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden")?;
     post_ctrl_c(hwnd);
     Ok(())
 }
 
+#[cfg(not(windows))]
+fn send_ctrl_c_to_scum() -> Result<(), String> {
+    Err("Nicht unterstützt auf dieser Plattform".to_string())
+}
+
+#[cfg(windows)]
 fn capture_window(hwnd: HWND) -> Option<image::RgbaImage> {
     unsafe {
         let hdc_window = GetDC(hwnd);
@@ -318,9 +341,13 @@ fn capture_window(hwnd: HWND) -> Option<image::RgbaImage> {
     }
 }
 
+#[cfg(windows)]
 fn capture_scum_window() -> Option<image::RgbaImage> {
     find_scum_window().and_then(capture_window)
 }
+
+#[cfg(not(windows))]
+fn capture_scum_window() -> Option<image::RgbaImage> { None }
 
 #[tauri::command]
 fn get_current_location() -> Result<CoordRecord, String> {
@@ -674,7 +701,6 @@ fn create_overlay_window(app: &tauri::AppHandle, config: &OverlayConfig) -> Resu
         .inner_size(w as f64, h as f64)
         .min_inner_size(200.0, 200.0)
         .decorations(false)
-        .transparent(true)
         .always_on_top(true)
         .resizable(true)
         .skip_taskbar(true)
