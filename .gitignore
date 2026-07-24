@@ -16,3 +16,6 @@ Thumbs.db
 
 # Map tiles (generated, not committed)
 src/tiles/
+
+# Export files
+src-tauri/scum-walker-export.*
