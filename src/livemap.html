@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SCUM Walker Live Map</title>
-  <link rel="stylesheet" href="livemap.css?v=2">
+  <link rel="stylesheet" href="lib/leaflet.css">
+  <link rel="stylesheet" href="livemap.css?v=3">
 </head>
 <body>
   <div id="dragHandle" title="Ziehen zum Verschieben">
@@ -22,10 +23,10 @@
     <input type="range" id="opacitySlider" min="20" max="100" value="85" title="Deckkraft">
   </div>
   <div id="mapShell">
-    <canvas id="mapCanvas"></canvas>
-    <div id="poiLabels"></div>
+    <div id="map"></div>
   </div>
   <div id="status">Warte auf Daten...</div>
-  <script src="livemap.js?v=2"></script>
+  <script src="lib/leaflet.js"></script>
+  <script src="livemap.js?v=3"></script>
 </body>
 </html>

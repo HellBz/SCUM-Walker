@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SCUM Walker</title>
+  <link rel="stylesheet" href="lib/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -35,6 +36,11 @@
         <input id="livemapUrl" type="text" value="http://127.0.0.1:4488/livemap.html" readonly>
         <button id="copyLivemapUrl" title="URL kopieren">⎘</button>
       </div>
+      <div style="height:6px"></div>
+      <div class="button-row">
+        <button id="downloadHiresBtn" title="Hochauflösende Karten-Tiles herunterladen">⬇ Hi-Res Tiles</button>
+      </div>
+      <div id="hiresStatus" style="font-size:11px;color:#888;margin-top:4px"></div>
     </div>
 
     <div class="section">
@@ -55,27 +61,18 @@
       <p class="hint">Oder Rechtsklick auf die Karte.</p>
       <div id="poiList"></div>
     </div>
-
-    <div class="section">
-      <h3>Zoom</h3>
-      <div class="zoom-controls">
-        <button class="zoom-btn" id="zoomOut">−</button>
-        <span id="zoomLabel">100%</span>
-        <button class="zoom-btn" id="zoomIn">+</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <h3>Legende</h3>
-      <div class="legend-item"><span class="line active"></span> Aktive Route</div>
-      <div class="legend-item"><span class="line"></span> Andere Route</div>
-      <div class="legend-item"><span class="dot" style="background:#ff44d3"></span> POI</div>
-    </div>
   </div>
 
   <div id="mapShell">
-    <canvas id="mapCanvas"></canvas>
-    <div id="poiLabels"></div>
+    <div id="map"></div>
+    <div id="mapControls">
+      <button id="mapZoomOut" title="Herauszoomen">−</button>
+      <span id="mapZoomLabel">100%</span>
+      <button id="mapZoomIn" title="Hineinzoomen">+</button>
+      <button id="mapFollowBtn" title="Aktueller Position folgen">◎</button>
+      <button id="mapCenterBtn" title="Auf aktuelle Position zentrieren">⛯</button>
+      <button id="mapFitBtn" title="Gesamte Karte anzeigen">⛶</button>
+    </div>
   </div>
 
   <div id="routeDialog" class="dialog">
@@ -118,6 +115,7 @@
     </div>
   </div>
 
+  <script src="lib/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

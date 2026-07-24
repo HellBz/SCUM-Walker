@@ -25,7 +25,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
-    PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP, WM_CHAR,
+    PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP,
 };
 
 const INTERVAL_SECONDS: u64 = 10;
@@ -209,13 +209,20 @@ fn post_key(hwnd: HWND, vk: u16, msg: u32) {
     }
 }
 
+fn tap_key(hwnd: HWND, vk: u16) {
+    post_key(hwnd, vk, WM_KEYDOWN);
+    std::thread::sleep(Duration::from_millis(30));
+    post_key(hwnd, vk, WM_KEYUP);
+    std::thread::sleep(Duration::from_millis(30));
+}
+
 fn post_ctrl_c(hwnd: HWND) {
     post_key(hwnd, VK_CONTROL, WM_KEYDOWN);
-    std::thread::sleep(Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(20));
     post_key(hwnd, VK_C, WM_KEYDOWN);
     std::thread::sleep(Duration::from_millis(50));
     post_key(hwnd, VK_C, WM_KEYUP);
-    std::thread::sleep(Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(20));
     post_key(hwnd, VK_CONTROL, WM_KEYUP);
 }
 
@@ -346,7 +353,7 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
                     continue;
                 }
-                thread::sleep(Duration::from_millis(300));
+                thread::sleep(Duration::from_millis(500));
                 if let Ok(text) = clipboard.get_text() {
                     if let Some(record) = parse_clipboard(&text) {
                         let should_emit = {
@@ -447,6 +454,54 @@ fn export_data(state: State<Arc<AppState>>, format: String) -> Result<String, St
         .ok_or("Export abgebrochen")?;
     fs::write(&path, content).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
+}
+
+const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/latest/download/tiles-hires.zip";
+const HIRES_TILES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles");
+
+#[tauri::command]
+fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let _ = app_handle.emit("hires-download-progress", "Lade tiles-hires.zip herunter...");
+    let response = reqwest::blocking::get(HIRES_TILES_URL)
+        .map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
+    let bytes = response.bytes().map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
+    let _ = app_handle.emit("hires-download-progress", format!("ZIP geladen ({} MB), entpacke...", bytes.len() / 1024 / 1024));
+
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("ZIP konnte nicht geöffnet werden: {}", e))?;
+
+    let tiles_dir = std::path::Path::new(HIRES_TILES_DIR);
+    let mut count = 0;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| format!("ZIP-Fehler: {}", e))?;
+        let outpath = match file.enclosed_name() {
+            Some(path) => tiles_dir.join(path),
+            None => continue,
+        };
+        if file.is_dir() {
+            std::fs::create_dir_all(&outpath).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(parent) = outpath.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut outfile = std::fs::File::create(&outpath).map_err(|e| e.to_string())?;
+        std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        count += 1;
+        if count % 200 == 0 {
+            let _ = app_handle.emit("hires-download-progress", format!("Entpackt: {} Dateien...", count));
+        }
+    }
+
+    let _ = app_handle.emit("hires-download-progress", format!("Fertig! {} Tiles entpackt.", count));
+    let _ = app_handle.emit("hires-tiles-installed", ());
+    Ok(())
+}
+
+#[tauri::command]
+fn check_hires_tiles() -> bool {
+    let z4 = std::path::Path::new(HIRES_TILES_DIR).join("4");
+    z4.exists() && z4.is_dir()
 }
 
 #[tauri::command]
@@ -814,6 +869,8 @@ fn main() {
             get_data,
             export_data,
             get_current_location,
+            download_hires_tiles,
+            check_hires_tiles,
             new_route,
             select_route,
             rename_route,

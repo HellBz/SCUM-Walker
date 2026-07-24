@@ -14,7 +14,10 @@ struct LiveMapData {
 const LIVEMAP_HTML: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.html"));
 const LIVEMAP_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.css"));
 const LIVEMAP_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.js"));
-const MAP_PNG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/scum_map-4096.png"));
+const TILES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles");
+const LIB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib");
+const LEAFLET_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.css"));
+const LEAFLET_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.js"));
 
 pub static HTTP_PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
 
@@ -71,7 +74,28 @@ pub fn start_http_server(state: Arc<AppState>) {
                 }
                 (&Method::Get, "/livemap.css") => text_response(LIVEMAP_CSS, "text/css"),
                 (&Method::Get, "/livemap.js") => text_response(LIVEMAP_JS, "application/javascript"),
-                (&Method::Get, "/map.png") => bytes_response(MAP_PNG, "image/png"),
+                (&Method::Get, "/lib/leaflet.css") => text_response(LEAFLET_CSS, "text/css"),
+                (&Method::Get, "/lib/leaflet.js") => text_response(LEAFLET_JS, "application/javascript"),
+                (&Method::Get, path) if path.starts_with("/tiles/") => {
+                    // Serve tile: /tiles/{z}/{x}/{y}.png
+                    let parts: Vec<&str> = path.strip_prefix("/tiles/").unwrap().split('/').collect();
+                    if parts.len() == 3 && parts[2].ends_with(".png") {
+                        let tile_path = std::path::Path::new(TILES_DIR)
+                            .join(parts[0])
+                            .join(parts[1])
+                            .join(parts[2]);
+                        match std::fs::read(&tile_path) {
+                            Ok(data) => bytes_response(&data, "image/png"),
+                            Err(_) => Response::from_string("Not Found")
+                                .with_status_code(404)
+                                .with_header(cors_header()),
+                        }
+                    } else {
+                        Response::from_string("Not Found")
+                            .with_status_code(404)
+                            .with_header(cors_header())
+                    }
+                }
                 (&Method::Get, "/api/data") => {
                     let data = state.app_data();
                     let payload = LiveMapData {

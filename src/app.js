@@ -1,13 +1,8 @@
 const { invoke } = window.__TAURI__.core;
 
-const mapShell = document.getElementById('mapShell');
-const mapContainer = document.getElementById('mapContainer');
-const canvas = document.getElementById('mapCanvas');
-const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const routeListEl = document.getElementById('routeList');
 const poiListEl = document.getElementById('poiList');
-const zoomLabel = document.getElementById('zoomLabel');
 const routeDialog = document.getElementById('routeDialog');
 const routeNameInput = document.getElementById('routeNameInput');
 const routeColorPicker = document.getElementById('routeColorPicker');
@@ -20,15 +15,6 @@ const poiColorsEl = document.getElementById('poiColors');
 const imageDialog = document.getElementById('imageDialog');
 const imageDialogImg = document.getElementById('imageDialogImg');
 const imageDialogTitle = document.getElementById('imageDialogTitle');
-const poiLabelsEl = document.getElementById('poiLabels');
-
-const MAP_SIZE = 4096;
-const worldMinX = -904800;
-const worldMaxX = 616818;
-const worldMinY = -904800;
-const worldMaxY = 618818;
-const worldWidth = worldMaxX - worldMinX;
-const worldHeight = worldMaxY - worldMinY;
 
 const ROUTE_COLORS = ['#00ffcc', '#ff8800', '#4488ff', '#ff44d3', '#ffee00', '#44cc44', '#ff4444', '#ffffff'];
 const POI_COLORS = ['#ff44d3', '#ff8800', '#44cc44', '#4488ff', '#ffee00', '#ff4444', '#ffffff'];
@@ -41,120 +27,255 @@ let data = { routes: [], current_route_id: null, pois: [] };
 let isRecording = false;
 let currentCoord = null;
 
-// Zoom / Pan state
-const ZOOM_MIN = 0.15;
-const ZOOM_MAX = 8.0;
-const ZOOM_STEP = 0.1;
-let zoom = 1.0;
-let panX = 0;
-let panY = 0;
-let mapImg = new Image();
+// World bounds in SCUM game coordinates
+const worldMinX = -904800;
+const worldMaxX = 616818;
+const worldMinY = -904800;
+const worldMaxY = 618818;
+const worldWidth = worldMaxX - worldMinX;
+const worldHeight = worldMaxY - worldMinY;
+
+// Tile system: 256px tiles, zoom 0-6. Image upscaled to 16384x16384 (no padding).
+// Zoom 0-3 bundled, 4-6 via download. maxNativeZoom adjusts dynamically.
+const MAP_UNITS = 256;
+const MAX_ZOOM = 6;
+const MIN_ZOOM = 0;
+const BUNDLED_MAX_ZOOM = 3;
 
 function safeGetStorage(key, fallback) {
   try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
-
 function safeSetStorage(key, value) {
   try { localStorage.setItem(key, value); } catch {}
 }
 
-function saveMapView() {
-  safeSetStorage('mainmap.zoom', zoom.toFixed(2));
-  safeSetStorage('mainmap.panX', panX.toFixed(2));
-  safeSetStorage('mainmap.panY', panY.toFixed(2));
+// Convert SCUM game coordinates to Leaflet coordinates
+// Map image: top-left = (worldMaxX, worldMaxY), bottom-right = (worldMinX, worldMinY)
+// With our custom CRS, lat=0 is bottom, lat=MAP_UNITS is top (like CRS.Simple)
+function gameToLatLng(gameX, gameY) {
+  const px = ((worldMaxX - gameX) / worldWidth) * MAP_UNITS;
+  const py = ((worldMaxY - gameY) / worldHeight) * MAP_UNITS;
+  return [MAP_UNITS - py, px];
 }
 
-function restoreMapView() {
-  const savedZoom = parseFloat(safeGetStorage('mainmap.zoom', ''));
-  const savedPanX = parseFloat(safeGetStorage('mainmap.panX', ''));
-  const savedPanY = parseFloat(safeGetStorage('mainmap.panY', ''));
-  if (isNaN(savedZoom) || savedZoom < ZOOM_MIN || savedZoom > ZOOM_MAX || isNaN(savedPanX) || isNaN(savedPanY)) {
-    return false;
+function latLngToGame(lat, lng) {
+  const py = MAP_UNITS - lat;
+  const px = lng;
+  const gameX = worldMaxX - (px / MAP_UNITS) * worldWidth;
+  const gameY = worldMaxY - (py / MAP_UNITS) * worldHeight;
+  return { x: gameX, y: gameY };
+}
+
+// Get HTTP server base URL for tiles
+let tileBaseUrl = 'http://127.0.0.1:4488';
+async function fetchTileBaseUrl() {
+  try {
+    const url = await invoke('get_livemap_url');
+    if (url) {
+      const u = new URL(url);
+      tileBaseUrl = `${u.protocol}//${u.host}`;
+    }
+  } catch {}
+}
+
+// Custom CRS: like CRS.Simple (Y-flip) but shifted so pixel coords are always positive
+// Transformation: y = -lat + MAP_UNITS (instead of y = -lat)
+const customCRS = L.extend({}, L.CRS.Simple, {
+  transformation: new L.Transformation(1, 0, -1, MAP_UNITS),
+});
+
+// Create Leaflet map with custom CRS
+const map = L.map('map', {
+  crs: customCRS,
+  minZoom: MIN_ZOOM,
+  maxZoom: MAX_ZOOM,
+  zoomSnap: 0,
+  zoomDelta: 0.25,
+  wheelPxPerZoomLevel: 60,
+  zoomControl: false,
+  attributionControl: false,
+  preferCanvas: true,
+});
+
+let tileLayer = null;
+
+async function initTileLayer() {
+  await fetchTileBaseUrl();
+  tileLayer = L.tileLayer(tileBaseUrl + '/tiles/{z}/{x}/{y}.png', {
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    maxNativeZoom: BUNDLED_MAX_ZOOM,
+    tileSize: 256,
+    noWrap: true,
+    bounds: L.latLngBounds([0, 0], [MAP_UNITS, MAP_UNITS]),
+  }).addTo(map);
+}
+
+initTileLayer();
+
+map.setMaxBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
+map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
+
+// Restore saved view
+const savedZoom = parseInt(safeGetStorage('mainmap.leafletZoom', ''));
+const savedLat = parseFloat(safeGetStorage('mainmap.leafletLat', ''));
+const savedLng = parseFloat(safeGetStorage('mainmap.leafletLng', ''));
+if (!isNaN(savedZoom) && !isNaN(savedLat) && !isNaN(savedLng)) {
+  map.setView([savedLat, savedLng], savedZoom);
+}
+
+map.on('zoomend moveend', () => {
+  const c = map.getCenter();
+  safeSetStorage('mainmap.leafletZoom', String(map.getZoom()));
+  safeSetStorage('mainmap.leafletLat', c.lat.toFixed(2));
+  safeSetStorage('mainmap.leafletLng', c.lng.toFixed(2));
+});
+
+// Follow / Center / Fit (floating map controls)
+let followEnabled = false;
+const mapZoomLabel = document.getElementById('mapZoomLabel');
+function updateMapZoomLabel() {
+  if (mapZoomLabel) {
+    const z = map.getZoom();
+    mapZoomLabel.textContent = Math.round(Math.pow(2, z) * 100) + '%';
   }
-  zoom = savedZoom;
-  panX = savedPanX;
-  panY = savedPanY;
-  return true;
+}
+updateMapZoomLabel();
+map.on('zoomend', updateMapZoomLabel);
+
+document.getElementById('mapZoomIn').addEventListener('click', () => map.zoomIn());
+document.getElementById('mapZoomOut').addEventListener('click', () => map.zoomOut());
+
+const mapFollowBtn = document.getElementById('mapFollowBtn');
+if (mapFollowBtn) {
+  mapFollowBtn.addEventListener('click', () => {
+    followEnabled = !followEnabled;
+    mapFollowBtn.style.background = followEnabled ? '#00ffcc33' : '';
+    if (followEnabled && currentCoord) {
+      const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+      map.setView(ll, map.getZoom());
+    }
+  });
 }
 
-mapImg.onload = () => {
-  if (!restoreMapView()) autoFitZoom();
-  else applyTransform();
-};
-mapImg.src = 'scum_map-4096.png';
-
-function gameToMapX(gameX) {
-  return ((worldMaxX - gameX) / worldWidth) * MAP_SIZE;
-}
-
-function gameToMapY(gameY) {
-  return ((worldMaxY - gameY) / worldHeight) * MAP_SIZE;
-}
-
-function worldToScreen(gameX, gameY) {
-  return {
-    x: panX + zoom * gameToMapX(gameX),
-    y: panY + zoom * gameToMapY(gameY)
-  };
-}
-
-function screenToWorld(sx, sy) {
-  const mx = (sx - panX) / zoom;
-  const my = (sy - panY) / zoom;
-  return {
-    x: worldMaxX - (mx / MAP_SIZE) * worldWidth,
-    y: worldMaxY - (my / MAP_SIZE) * worldHeight
-  };
-}
-
-function clampPan() {
-  const shellW = mapShell.clientWidth;
-  const shellH = mapShell.clientHeight;
-  const contentW = MAP_SIZE * zoom;
-  const contentH = MAP_SIZE * zoom;
-  if (contentW <= shellW) {
-    panX = (shellW - contentW) / 2;
-  } else {
-    panX = Math.min(0, Math.max(shellW - contentW, panX));
+document.getElementById('mapCenterBtn').addEventListener('click', () => {
+  if (currentCoord) {
+    const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+    map.panTo(ll);
   }
-  if (contentH <= shellH) {
-    panY = (shellH - contentH) / 2;
-  } else {
-    panY = Math.min(0, Math.max(shellH - contentH, panY));
+});
+
+document.getElementById('mapFitBtn').addEventListener('click', () => {
+  followEnabled = false;
+  if (mapFollowBtn) mapFollowBtn.style.background = '';
+  map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
+});
+
+// Leaflet layers for routes, POIs, live marker
+let routeLayers = {};
+let routeEndMarkers = {};
+let poiMarkers = [];
+let liveMarker = null;
+let liveArrow = null;
+let livePulse = null;
+
+function clearRoutes() {
+  Object.values(routeLayers).forEach(l => map.removeLayer(l));
+  Object.values(routeEndMarkers).forEach(m => map.removeLayer(m));
+  routeLayers = {};
+  routeEndMarkers = {};
+}
+
+function clearPois() {
+  poiMarkers.forEach(m => map.removeLayer(m));
+  poiMarkers = [];
+}
+
+function clearLiveMarker() {
+  if (liveMarker) { map.removeLayer(liveMarker); liveMarker = null; }
+  if (liveArrow) { map.removeLayer(liveArrow); liveArrow = null; }
+  if (livePulse) { map.removeLayer(livePulse); livePulse = null; }
+}
+
+function renderRoutes() {
+  clearRoutes();
+  data.routes.forEach(route => {
+    if (route.visible === false) return;
+    if (!route.records || route.records.length < 1) return;
+    const isCurrent = route.id === data.current_route_id;
+    const color = route.color || '#888';
+
+    if (route.records.length >= 2) {
+      const latlngs = route.records.map(r => gameToLatLng(r.x, r.y));
+      const line = L.polyline(latlngs, {
+        color: color,
+        weight: isCurrent ? 3 : 2,
+        opacity: 0.8,
+        dashArray: isCurrent ? null : '8,8',
+      }).addTo(map);
+      routeLayers[route.id] = line;
+    }
+
+    // End point marker
+    const last = route.records[route.records.length - 1];
+    const ll = gameToLatLng(last.x, last.y);
+    const endMarker = L.circleMarker(ll, {
+      radius: isCurrent ? 7 : 4,
+      fillColor: color,
+      color: '#000',
+      weight: 1,
+      fillOpacity: 1,
+    }).addTo(map);
+    routeEndMarkers[route.id] = endMarker;
+  });
+}
+
+function renderPois() {
+  clearPois();
+  data.pois.forEach(poi => {
+    const ll = gameToLatLng(poi.x, poi.y);
+    const marker = L.circleMarker(ll, {
+      radius: 6,
+      fillColor: poi.color,
+      color: '#fff',
+      weight: 1,
+      fillOpacity: 1,
+    }).addTo(map);
+    if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
+    poiMarkers.push(marker);
+  });
+}
+
+function renderLiveMarker() {
+  clearLiveMarker();
+  if (!currentCoord) return;
+  const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+
+  let html = '<div class="live-marker"><div class="live-marker-dot"></div>';
+  if (typeof currentCoord.yaw === 'number') {
+    html += `<div class="live-marker-arrow" style="transform: translate(-50%, -50%) rotate(${currentCoord.yaw - 90}deg) translateY(-20px)"></div>`;
   }
+  html += '</div>';
+
+  liveMarker = L.marker(ll, {
+    icon: L.divIcon({
+      className: '',
+      html: html,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    }),
+    interactive: false,
+  }).addTo(map);
 }
 
-function resizeCanvas() {
-  const dpr = window.devicePixelRatio || 1;
-  const w = mapShell.clientWidth;
-  const h = mapShell.clientHeight;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  draw();
-  renderLabels();
+function renderMap() {
+  renderRoutes();
+  renderPois();
+  renderLiveMarker();
 }
 
-function applyTransform() {
-  clampPan();
-  resizeCanvas();
-  zoomLabel.textContent = Math.round(zoom * 100) + '%';
-  mapShell.style.cursor = MAP_SIZE * zoom > mapShell.clientWidth + 1 ? 'grab' : '';
-  saveMapView();
-}
-
-function autoFitZoom() {
-  const pad = 16;
-  const availW = mapShell.clientWidth - pad;
-  const availH = mapShell.clientHeight - pad;
-  const fit = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.min(availW, availH) / MAP_SIZE));
-  zoom = fit;
-  const size = MAP_SIZE * zoom;
-  panX = (mapShell.clientWidth - size) / 2;
-  panY = (mapShell.clientHeight - size) / 2;
-  applyTransform();
+function getCurrentRoute() {
+  return data.routes.find(r => r.id === data.current_route_id);
 }
 
 async function loadData() {
@@ -170,15 +291,10 @@ async function loadData() {
   }
 }
 
-function getCurrentRoute() {
-  return data.routes.find(r => r.id === data.current_route_id);
-}
-
 function updateUI() {
   renderRouteList();
   renderPoiList();
-  draw();
-  renderLabels();
+  renderMap();
 }
 
 async function syncRecordingState() {
@@ -187,6 +303,12 @@ async function syncRecordingState() {
   } catch (err) {
     isRecording = false;
   }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function renderRouteList() {
@@ -238,7 +360,6 @@ function renderRouteList() {
             isRecording = await invoke('toggle_recording');
           }
         }
-        updateGlobalRecordingButton();
       } else if (action === 'activate') {
         data = await invoke('select_route', { id });
       } else if (action === 'toggle-visibility') {
@@ -251,9 +372,7 @@ function renderRouteList() {
       } else if (action === 'delete') {
         if (confirm('Route wirklich löschen?')) {
           data = await invoke('delete_route', { id });
-        } else {
-          return;
-        }
+        } else { return; }
       }
       updateUI();
     });
@@ -343,127 +462,6 @@ function renderPoiList() {
   });
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function draw() {
-  const w = mapShell.clientWidth;
-  const h = mapShell.clientHeight;
-  ctx.clearRect(0, 0, w, h);
-
-  if (mapImg && mapImg.complete && mapImg.naturalWidth) {
-    ctx.drawImage(mapImg, 0, 0, MAP_SIZE, MAP_SIZE, panX, panY, MAP_SIZE * zoom, MAP_SIZE * zoom);
-  }
-
-  data.routes.forEach(route => {
-    if (route.visible === false) return;
-    const isCurrent = route.id === data.current_route_id;
-    const color = route.color || '#888';
-
-    if (route.records.length > 1) {
-      ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = isCurrent ? 2.5 : 1.5;
-      ctx.setLineDash(isCurrent ? [] : [5, 5]);
-      for (let i = 0; i < route.records.length; i++) {
-        const pt = worldToScreen(route.records[i].x, route.records[i].y);
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    if (route.records.length > 0) {
-      const last = route.records[route.records.length - 1];
-      const pt = worldToScreen(last.x, last.y);
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, isCurrent ? 7 : 4, 0, 2 * Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  });
-
-  data.pois.forEach(poi => {
-    const pt = worldToScreen(poi.x, poi.y);
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
-    ctx.fillStyle = poi.color;
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  });
-
-  if (currentCoord) {
-    const pt = worldToScreen(currentCoord.x, currentCoord.y);
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 8, 0, 2 * Math.PI);
-    ctx.fillStyle = '#00ffcc';
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 14, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#00ffccaa';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    if (typeof currentCoord.yaw === 'number') {
-      const angle = (currentCoord.yaw + 180) * Math.PI / 180;
-      const outerRadius = 14;
-      const arrowLength = 9;
-      const halfWidth = 4;
-      const tip = {
-        x: pt.x + (outerRadius + arrowLength) * Math.cos(angle),
-        y: pt.y + (outerRadius + arrowLength) * Math.sin(angle)
-      };
-      const base = {
-        x: pt.x + outerRadius * Math.cos(angle),
-        y: pt.y + outerRadius * Math.sin(angle)
-      };
-      const perpendicular = {
-        x: -Math.sin(angle) * halfWidth,
-        y: Math.cos(angle) * halfWidth
-      };
-      ctx.beginPath();
-      ctx.moveTo(tip.x, tip.y);
-      ctx.lineTo(base.x + perpendicular.x, base.y + perpendicular.y);
-      ctx.lineTo(base.x - perpendicular.x, base.y - perpendicular.y);
-      ctx.closePath();
-      ctx.fillStyle = '#00ffcc';
-      ctx.fill();
-    }
-  }
-}
-
-function renderLabels() {
-  poiLabelsEl.innerHTML = '';
-  const shellW = mapShell.clientWidth;
-  const shellH = mapShell.clientHeight;
-
-  data.pois.forEach(poi => {
-    const pt = worldToScreen(poi.x, poi.y);
-
-    if (pt.x < -20 || pt.x > shellW + 20 || pt.y < -10 || pt.y > shellH + 10) return;
-
-    const el = document.createElement('div');
-    el.className = 'poi-label';
-    el.textContent = poi.label;
-    el.style.left = pt.x + 'px';
-    el.style.top = pt.y + 'px';
-    poiLabelsEl.appendChild(el);
-  });
-}
-
 function buildColorPicker(container, colors, selected, onSelect, pickerInput) {
   container.innerHTML = '';
   colors.forEach(color => {
@@ -482,12 +480,10 @@ function buildColorPicker(container, colors, selected, onSelect, pickerInput) {
   }
 }
 
-mapShell.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  const rect = mapShell.getBoundingClientRect();
-  const vx = e.clientX - rect.left;
-  const vy = e.clientY - rect.top;
-  pendingPoi = screenToWorld(vx, vy);
+// Context menu for adding POIs via right-click on map
+map.on('contextmenu', (e) => {
+  const game = latLngToGame(e.latlng.lat, e.latlng.lng);
+  pendingPoi = game;
   poiLabelInput.value = '';
   buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
   poiDialog.classList.add('open');
@@ -497,91 +493,6 @@ mapShell.addEventListener('contextmenu', (e) => {
 poiColorPicker.addEventListener('input', (e) => {
   selectedPoiColor = e.target.value.toLowerCase();
   buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
-});
-
-// Zoom: scroll wheel
-mapShell.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const rect = mapShell.getBoundingClientRect();
-  const vx = e.clientX - rect.left;
-  const vy = e.clientY - rect.top;
-
-  const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-  const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, parseFloat((zoom + delta).toFixed(2))));
-  if (newZoom === zoom) return;
-
-  const ratio = newZoom / zoom;
-  panX = vx - ratio * (vx - panX);
-  panY = vy - ratio * (vy - panY);
-  zoom = newZoom;
-  applyTransform();
-}, { passive: false });
-
-// Zoom: sidebar buttons
-document.getElementById('zoomIn').addEventListener('click', () => {
-  const shellW = mapShell.clientWidth;
-  const shellH = mapShell.clientHeight;
-  const newZoom = Math.min(ZOOM_MAX, parseFloat((zoom + ZOOM_STEP).toFixed(2)));
-  if (newZoom === zoom) return;
-  const ratio = newZoom / zoom;
-  panX = shellW / 2 - ratio * (shellW / 2 - panX);
-  panY = shellH / 2 - ratio * (shellH / 2 - panY);
-  zoom = newZoom;
-  applyTransform();
-});
-
-document.getElementById('zoomOut').addEventListener('click', () => {
-  const shellW = mapShell.clientWidth;
-  const shellH = mapShell.clientHeight;
-  const newZoom = Math.max(ZOOM_MIN, parseFloat((zoom - ZOOM_STEP).toFixed(2)));
-  if (newZoom === zoom) return;
-  const ratio = newZoom / zoom;
-  panX = shellW / 2 - ratio * (shellW / 2 - panX);
-  panY = shellH / 2 - ratio * (shellH / 2 - panY);
-  zoom = newZoom;
-  applyTransform();
-});
-
-// Pan: left-mouse drag
-let isPanning = false;
-let didPan = false;
-let panStartX = 0;
-let panStartY = 0;
-let panStartPanX = 0;
-let panStartPanY = 0;
-
-function mapIsLargerThanShell() {
-  return MAP_SIZE * zoom > mapShell.clientWidth + 1;
-}
-
-mapShell.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  if (!mapIsLargerThanShell()) return;
-  e.preventDefault();
-  isPanning = true;
-  didPan = false;
-  panStartX = e.clientX;
-  panStartY = e.clientY;
-  panStartPanX = panX;
-  panStartPanY = panY;
-  mapShell.style.cursor = 'grabbing';
-});
-
-document.addEventListener('mousemove', (e) => {
-  if (!isPanning) return;
-  const dx = e.clientX - panStartX;
-  const dy = e.clientY - panStartY;
-  if (!didPan && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
-  didPan = true;
-  panX = panStartPanX + dx;
-  panY = panStartPanY + dy;
-  applyTransform();
-});
-
-document.addEventListener('mouseup', (e) => {
-  if (e.button !== 0 || !isPanning) return;
-  isPanning = false;
-  mapShell.style.cursor = mapIsLargerThanShell() ? 'grab' : '';
 });
 
 // Route dialog
@@ -751,7 +662,48 @@ lockOverlayBtn.addEventListener('click', async () => {
   }
 });
 
-// Global recording state is controlled per route via the route list icons
+// Hi-Res Tiles Download
+const downloadHiresBtn = document.getElementById('downloadHiresBtn');
+const hiresStatus = document.getElementById('hiresStatus');
+
+async function checkHiresTiles() {
+  try {
+    const installed = await invoke('check_hires_tiles');
+    if (installed) {
+      hiresStatus.textContent = '✓ Hi-Res Tiles installiert';
+      downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
+      downloadHiresBtn.disabled = true;
+    } else {
+      hiresStatus.textContent = 'Nur Zoom 0-3 verfügbar. Hi-Res für Zoom 4-6.';
+    }
+  } catch {}
+}
+checkHiresTiles();
+
+downloadHiresBtn.addEventListener('click', async () => {
+  downloadHiresBtn.disabled = true;
+  downloadHiresBtn.textContent = 'Lädt...';
+  try {
+    await invoke('download_hires_tiles');
+  } catch (err) {
+    hiresStatus.textContent = 'Fehler: ' + err;
+    downloadHiresBtn.disabled = false;
+    downloadHiresBtn.textContent = '⬇ Hi-Res Tiles';
+  }
+});
+
+window.__TAURI__.event.listen('hires-download-progress', (event) => {
+  hiresStatus.textContent = event.payload;
+});
+
+window.__TAURI__.event.listen('hires-tiles-installed', () => {
+  hiresStatus.textContent = '✓ Hi-Res Tiles installiert! Karte neu laden für volle Auflösung.';
+  downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
+  if (tileLayer) {
+    tileLayer.options.maxNativeZoom = MAX_ZOOM;
+    tileLayer.redraw();
+  }
+});
 
 // SCUM status
 let scumRunning = true;
@@ -791,7 +743,11 @@ if (window.__TAURI__.event) {
       route.records.push(event.payload);
     }
     statusEl.textContent = `Letzte Koordinate: X=${event.payload.x.toFixed(0)} Y=${event.payload.y.toFixed(0)}`;
-    updateUI();
+    renderMap();
+    if (followEnabled) {
+      const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+      map.panTo(ll);
+    }
   });
 }
 
@@ -808,12 +764,6 @@ async function exportData(format) {
 
 document.getElementById('exportJson').addEventListener('click', () => exportData('json'));
 document.getElementById('exportCsv').addEventListener('click', () => exportData('csv'));
-
-let resizeTimer;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(applyTransform, 100);
-});
 
 // Update livemap URL display
 async function updateLivemapUrl() {

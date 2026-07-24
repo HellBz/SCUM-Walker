@@ -13,3 +13,6 @@ src-tauri/gen/schemas
 
 # OS files
 Thumbs.db
+
+# Map tiles (generated, not committed)
+src/tiles/
