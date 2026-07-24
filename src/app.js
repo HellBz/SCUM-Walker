@@ -13,6 +13,7 @@ const routeNameInput = document.getElementById('routeNameInput');
 const routeColorPicker = document.getElementById('routeColorPicker');
 const routeColorsEl = document.getElementById('routeColors');
 const poiDialog = document.getElementById('poiDialog');
+const poiDialogTitle = document.getElementById('poiDialogTitle');
 const poiLabelInput = document.getElementById('poiLabel');
 const poiColorPicker = document.getElementById('poiColorPicker');
 const poiColorsEl = document.getElementById('poiColors');
@@ -21,7 +22,7 @@ const imageDialogImg = document.getElementById('imageDialogImg');
 const imageDialogTitle = document.getElementById('imageDialogTitle');
 const poiLabelsEl = document.getElementById('poiLabels');
 
-const MAP_SIZE = 1080;
+const MAP_SIZE = 4096;
 const worldMinX = -904800;
 const worldMaxX = 616818;
 const worldMinY = -904800;
@@ -34,21 +35,53 @@ const POI_COLORS = ['#ff44d3', '#ff8800', '#44cc44', '#4488ff', '#ffee00', '#ff4
 let selectedRouteColor = ROUTE_COLORS[0];
 let selectedPoiColor = POI_COLORS[0];
 let pendingPoi = null;
+let editingPoiId = null;
 
 let data = { routes: [], current_route_id: null, pois: [] };
 let isRecording = false;
 let currentCoord = null;
 
 // Zoom / Pan state
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 4.0;
+const ZOOM_MIN = 0.15;
+const ZOOM_MAX = 8.0;
 const ZOOM_STEP = 0.1;
 let zoom = 1.0;
 let panX = 0;
 let panY = 0;
 let mapImg = new Image();
-mapImg.src = 'scum_map-1080x1080.png';
-mapImg.onload = () => applyTransform();
+
+function safeGetStorage(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
+function safeSetStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+
+function saveMapView() {
+  safeSetStorage('mainmap.zoom', zoom.toFixed(2));
+  safeSetStorage('mainmap.panX', panX.toFixed(2));
+  safeSetStorage('mainmap.panY', panY.toFixed(2));
+}
+
+function restoreMapView() {
+  const savedZoom = parseFloat(safeGetStorage('mainmap.zoom', ''));
+  const savedPanX = parseFloat(safeGetStorage('mainmap.panX', ''));
+  const savedPanY = parseFloat(safeGetStorage('mainmap.panY', ''));
+  if (isNaN(savedZoom) || savedZoom < ZOOM_MIN || savedZoom > ZOOM_MAX || isNaN(savedPanX) || isNaN(savedPanY)) {
+    return false;
+  }
+  zoom = savedZoom;
+  panX = savedPanX;
+  panY = savedPanY;
+  return true;
+}
+
+mapImg.onload = () => {
+  if (!restoreMapView()) autoFitZoom();
+  else applyTransform();
+};
+mapImg.src = 'scum_map-4096.png';
 
 function gameToMapX(gameX) {
   return ((worldMaxX - gameX) / worldWidth) * MAP_SIZE;
@@ -109,13 +142,14 @@ function applyTransform() {
   resizeCanvas();
   zoomLabel.textContent = Math.round(zoom * 100) + '%';
   mapShell.style.cursor = MAP_SIZE * zoom > mapShell.clientWidth + 1 ? 'grab' : '';
+  saveMapView();
 }
 
 function autoFitZoom() {
   const pad = 16;
   const availW = mapShell.clientWidth - pad;
   const availH = mapShell.clientHeight - pad;
-  const fit = Math.max(ZOOM_MIN, Math.min(1.0, Math.floor(Math.min(availW, availH) / MAP_SIZE * 10) / 10));
+  const fit = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.min(availW, availH) / MAP_SIZE));
   zoom = fit;
   const size = MAP_SIZE * zoom;
   panX = (mapShell.clientWidth - size) / 2;
@@ -171,8 +205,8 @@ function renderRouteList() {
       <span class="route-color" style="background:${route.color || '#888'}"></span>
       <span class="route-name">${escapeHtml(route.name)}</span>
       <span class="route-actions">
-        <button class="route-icon ${recordingHere ? 'recording' : ''}" data-action="record" data-id="${route.id}" title="${recordingHere ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten'}">${recordingHere ? '⏹' : '⏺'}</button>
-        <button class="route-icon ${visible ? '' : 'hidden'}" data-action="toggle-visibility" data-id="${route.id}" title="${visible ? 'Auf Karte ausblenden' : 'Auf Karte einblenden'}">${visible ? '👁' : '�'}</button>
+        <button class="route-icon ${recordingHere ? 'recording' : ''}" data-action="record" data-id="${route.id}" title="${recordingHere ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten'}">${recordingHere ? '■' : '●'}</button>
+        <button class="route-icon ${visible ? '' : 'hidden'}" data-action="toggle-visibility" data-id="${route.id}" title="${visible ? 'Auf Karte ausblenden' : 'Auf Karte einblenden'}">${visible ? '◉' : '○'}</button>
         <button class="route-icon" data-action="rename" data-id="${route.id}" title="Umbenennen">✎</button>
         <button class="route-icon" data-action="delete" data-id="${route.id}" title="Löschen">🗑</button>
       </span>
@@ -250,11 +284,29 @@ function renderPoiList() {
     const div = document.createElement('div');
     div.className = 'poi-item';
     div.innerHTML = `<span><span class="poi-color" style="background:${poi.color}"></span>${escapeHtml(poi.label)}</span>
-                     <span>
-                       <span class="poi-image-btn poi-screenshot-btn" data-id="${poi.id}">${hasImage ? 'Bild anzeigen' : 'Bild einfügen'}</span>
-                       <span class="poi-delete" data-id="${poi.id}">löschen</span>
+                     <span class="poi-actions">
+                       <button class="poi-edit" data-id="${poi.id}" title="POI bearbeiten">✎</button>
+                       <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Bild einfügen'}">🖼</button>
+                       <button class="poi-delete" data-id="${poi.id}" title="POI löschen">🗑</button>
                      </span>`;
     poiListEl.appendChild(div);
+  });
+
+  poiListEl.querySelectorAll('.poi-edit').forEach(el => {
+    el.addEventListener('click', () => {
+      const poi = data.pois.find(p => p.id === el.dataset.id);
+      if (!poi) return;
+      editingPoiId = poi.id;
+      pendingPoi = null;
+      selectedPoiColor = poi.color;
+      poiDialogTitle.textContent = 'POI bearbeiten';
+      poiLabelInput.value = poi.label;
+      poiColorPicker.value = selectedPoiColor;
+      buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
+      poiDialog.classList.add('open');
+      poiLabelInput.focus();
+      poiLabelInput.select();
+    });
   });
 
   poiListEl.querySelectorAll('.poi-image-btn').forEach(el => {
@@ -366,22 +418,26 @@ function draw() {
     ctx.stroke();
 
     if (typeof currentCoord.yaw === 'number') {
-      const len = 12000;
-      const yawRad = currentCoord.yaw * Math.PI / 180;
-      const end = worldToScreen(currentCoord.x + len * Math.cos(yawRad), currentCoord.y + len * Math.sin(yawRad));
-      const angle = Math.atan2(end.y - pt.y, end.x - pt.x);
+      const angle = (currentCoord.yaw + 180) * Math.PI / 180;
+      const outerRadius = 14;
+      const arrowLength = 9;
+      const halfWidth = 4;
+      const tip = {
+        x: pt.x + (outerRadius + arrowLength) * Math.cos(angle),
+        y: pt.y + (outerRadius + arrowLength) * Math.sin(angle)
+      };
+      const base = {
+        x: pt.x + outerRadius * Math.cos(angle),
+        y: pt.y + outerRadius * Math.sin(angle)
+      };
+      const perpendicular = {
+        x: -Math.sin(angle) * halfWidth,
+        y: Math.cos(angle) * halfWidth
+      };
       ctx.beginPath();
-      ctx.moveTo(pt.x, pt.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.strokeStyle = '#00ffcc';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      const headLen = 10;
-      ctx.beginPath();
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 6), end.y - headLen * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 6), end.y - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(base.x + perpendicular.x, base.y + perpendicular.y);
+      ctx.lineTo(base.x - perpendicular.x, base.y - perpendicular.y);
       ctx.closePath();
       ctx.fillStyle = '#00ffcc';
       ctx.fill();
@@ -561,6 +617,7 @@ document.getElementById('routeSave').addEventListener('click', async () => {
 document.getElementById('poiCancel').addEventListener('click', () => {
   poiDialog.classList.remove('open');
   pendingPoi = null;
+  editingPoiId = null;
 });
 
 document.getElementById('imageDialogClose').addEventListener('click', () => {
@@ -573,7 +630,10 @@ document.getElementById('addPoiFromLocation').addEventListener('click', async ()
     statusEl.textContent = 'Koordinaten werden gelesen...';
     const record = await invoke('get_current_location');
     pendingPoi = { x: record.x, y: record.y };
+    editingPoiId = null;
+    poiDialogTitle.textContent = 'POI hinzufügen';
     poiLabelInput.value = '';
+    poiColorPicker.value = selectedPoiColor;
     buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
     poiDialog.classList.add('open');
     poiLabelInput.focus();
@@ -584,20 +644,25 @@ document.getElementById('addPoiFromLocation').addEventListener('click', async ()
 });
 
 document.getElementById('poiSave').addEventListener('click', async () => {
-  if (!pendingPoi) return;
   const label = poiLabelInput.value.trim() || 'POI';
-  const poi = {
-    id: Date.now().toString(),
-    label,
-    x: pendingPoi.x,
-    y: pendingPoi.y,
-    type: 'general',
-    color: selectedPoiColor
-  };
-  data = await invoke('add_poi', { poi });
+  if (editingPoiId) {
+    data = await invoke('update_poi', { id: editingPoiId, label, color: selectedPoiColor });
+  } else {
+    if (!pendingPoi) return;
+    const poi = {
+      id: Date.now().toString(),
+      label,
+      x: pendingPoi.x,
+      y: pendingPoi.y,
+      type: 'general',
+      color: selectedPoiColor
+    };
+    data = await invoke('add_poi', { poi });
+  }
   updateUI();
   poiDialog.classList.remove('open');
   pendingPoi = null;
+  editingPoiId = null;
 });
 
 // Live tracking toggle
@@ -619,7 +684,16 @@ liveTrackingBtn.addEventListener('click', async () => {
   try {
     isLiveTracking = await invoke('toggle_live_tracking');
     liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
-    statusEl.textContent = isLiveTracking ? 'Live-Tracking aktiv' : 'Live-Tracking pausiert';
+    if (isLiveTracking) {
+      await checkScumStatus();
+      if (scumRunning) {
+        statusEl.textContent = 'Live-Tracking aktiv';
+      } else {
+        statusEl.textContent = 'Live-Tracking aktiv – aber SCUM nicht gestartet';
+      }
+    } else {
+      statusEl.textContent = 'Live-Tracking pausiert';
+    }
   } catch (err) {
     statusEl.textContent = 'Live-Tracking: ' + err;
   }
@@ -679,8 +753,37 @@ lockOverlayBtn.addEventListener('click', async () => {
 
 // Global recording state is controlled per route via the route list icons
 
+// SCUM status
+let scumRunning = true;
+async function checkScumStatus() {
+  try {
+    scumRunning = await invoke('is_scum_running');
+  } catch { scumRunning = false; }
+  updateScumStatus();
+}
+
+function updateScumStatus() {
+  const scumStatusEl = document.getElementById('scumStatus');
+  if (!scumStatusEl) return;
+  if (scumRunning) {
+    scumStatusEl.textContent = 'SCUM: läuft';
+    scumStatusEl.className = 'scum-status running';
+  } else {
+    scumStatusEl.textContent = 'SCUM: nicht gestartet';
+    scumStatusEl.className = 'scum-status not-running';
+  }
+}
+
 // Live updates
 if (window.__TAURI__.event) {
+  window.__TAURI__.event.listen('scum-status', (event) => {
+    scumRunning = event.payload;
+    updateScumStatus();
+    if (!scumRunning && isLiveTracking) {
+      statusEl.textContent = 'SCUM nicht gestartet – Live-Tracking pausiert';
+    }
+  });
+
   window.__TAURI__.event.listen('coord-update', (event) => {
     currentCoord = event.payload;
     const route = getCurrentRoute();
@@ -692,56 +795,35 @@ if (window.__TAURI__.event) {
   });
 }
 
-function download(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function exportJson() {
-  const exportData = {
-    exportedAt: new Date().toISOString(),
-    routes: data.routes,
-    pois: data.pois
-  };
-  download('scum-walker-export.json', JSON.stringify(exportData, null, 2), 'application/json');
-}
-
-function exportCsv() {
-  let csv = 'type,route_id,route_name,record_index,time,x,y,z,pitch,yaw,roll\n';
-  data.routes.forEach(route => {
-    route.records.forEach((rec, idx) => {
-      csv += `record,${route.id},${escapeCsv(route.name)},${idx},${rec.time},${rec.x},${rec.y},${rec.z},${rec.pitch},${rec.yaw},${rec.roll}\n`;
-    });
-  });
-  data.pois.forEach(poi => {
-    csv += `poi,${poi.id},${escapeCsv(poi.label)},,,${poi.x},${poi.y},,,,\n`;
-  });
-  download('scum-walker-export.csv', csv, 'text/csv');
-}
-
-function escapeCsv(value) {
-  const str = String(value ?? '');
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return '"' + str.replace(/"/g, '""') + '"';
+async function exportData(format) {
+  try {
+    const path = await invoke('export_data', { format });
+    statusEl.textContent = `${format.toUpperCase()} exportiert: ${path}`;
+  } catch (err) {
+    if (String(err) !== 'Export abgebrochen') {
+      statusEl.textContent = 'Export fehlgeschlagen: ' + err;
+    }
   }
-  return str;
 }
 
-document.getElementById('exportJson').addEventListener('click', exportJson);
-document.getElementById('exportCsv').addEventListener('click', exportCsv);
+document.getElementById('exportJson').addEventListener('click', () => exportData('json'));
+document.getElementById('exportCsv').addEventListener('click', () => exportData('csv'));
 
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(autoFitZoom, 100);
+  resizeTimer = setTimeout(applyTransform, 100);
 });
 
+// Update livemap URL display
+async function updateLivemapUrl() {
+  try {
+    const url = await invoke('get_livemap_url');
+    const input = document.getElementById('livemapUrl');
+    if (input) input.value = url;
+  } catch {}
+}
+
 loadData();
-autoFitZoom();
+checkScumStatus();
+updateLivemapUrl();

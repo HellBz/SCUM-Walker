@@ -1,6 +1,5 @@
 use arboard::Clipboard;
 use chrono::{DateTime, Utc};
-use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
@@ -14,13 +13,20 @@ use tauri::{Emitter, Manager, State};
 use tauri::webview::WebviewWindowBuilder;
 
 mod http_server;
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
     GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
     SRCCOPY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetClientRect, SetForegroundWindow};
+use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
+use windows::Win32::System::Threading::{
+    OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, FindWindowW, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
+    PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP, WM_CHAR,
+};
 
 const INTERVAL_SECONDS: u64 = 10;
 const SCUM_WINDOW_TITLES: &[&str] = &["SCUM", "SCUM ", "SCUM Early Access"];
@@ -137,7 +143,7 @@ fn save_data(path: &PathBuf, data: &AppData) {
     }
 }
 
-fn find_scum_window() -> Option<HWND> {
+fn find_scum_window_by_title() -> Option<HWND> {
     for title in SCUM_WINDOW_TITLES {
         let wide: Vec<u16> = OsStr::new(title).encode_wide().chain(Some(0)).collect();
         let hwnd = unsafe { FindWindowW(None, windows::core::PCWSTR(wide.as_ptr())) };
@@ -148,21 +154,75 @@ fn find_scum_window() -> Option<HWND> {
     None
 }
 
+unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> windows::Win32::Foundation::BOOL {
+    if !IsWindowVisible(hwnd).as_bool() {
+        return true.into();
+    }
+    let mut pid: u32 = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == 0 {
+        return true.into();
+    }
+    let Ok(hproc) = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) else {
+        return true.into();
+    };
+    let mut buf = [0u16; 512];
+    let len = GetModuleFileNameExW(hproc, None, &mut buf);
+    let _ = CloseHandle(hproc);
+    if len == 0 {
+        return true.into();
+    }
+    let path = String::from_utf16_lossy(&buf[..len as usize]);
+    let lower = path.to_lowercase();
+    if lower.ends_with("scum.exe") || lower.ends_with("scum-win64-shipping.exe") {
+        let out = lparam.0 as *mut HWND;
+        *out = hwnd;
+        return false.into();
+    }
+    true.into()
+}
+
+fn find_scum_window_by_process() -> Option<HWND> {
+    let mut result: HWND = HWND(0);
+    unsafe {
+        let _ = EnumWindows(Some(enum_window_callback), LPARAM(&mut result as *mut _ as isize));
+    }
+    if result.0 == 0 { None } else { Some(result) }
+}
+
+fn find_scum_window() -> Option<HWND> {
+    find_scum_window_by_title().or_else(find_scum_window_by_process)
+}
+
 fn focus_scum_window() {
     if let Some(hwnd) = find_scum_window() {
         unsafe { let _ = SetForegroundWindow(hwnd); }
     }
 }
 
-fn press_ctrl_c() {
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
-    let _ = enigo.key(Key::Control, Direction::Press);
+const VK_CONTROL: u16 = 0x11;
+const VK_C: u16 = 0x43;
+
+fn post_key(hwnd: HWND, vk: u16, msg: u32) {
+    unsafe {
+        let _ = PostMessageW(hwnd, msg, windows::Win32::Foundation::WPARAM(vk as usize), windows::Win32::Foundation::LPARAM(0));
+    }
+}
+
+fn post_ctrl_c(hwnd: HWND) {
+    post_key(hwnd, VK_CONTROL, WM_KEYDOWN);
     std::thread::sleep(Duration::from_millis(10));
-    let _ = enigo.key(Key::Unicode('c'), Direction::Press);
+    post_key(hwnd, VK_C, WM_KEYDOWN);
+    std::thread::sleep(Duration::from_millis(50));
+    post_key(hwnd, VK_C, WM_KEYUP);
     std::thread::sleep(Duration::from_millis(10));
-    let _ = enigo.key(Key::Unicode('c'), Direction::Release);
-    std::thread::sleep(Duration::from_millis(10));
-    let _ = enigo.key(Key::Control, Direction::Release);
+    post_key(hwnd, VK_CONTROL, WM_KEYUP);
+}
+
+fn send_ctrl_c_to_scum() -> Result<(), String> {
+    let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden")?;
+    post_ctrl_c(hwnd);
+    Ok(())
 }
 
 fn capture_window(hwnd: HWND) -> Option<image::RgbaImage> {
@@ -255,24 +315,37 @@ fn capture_scum_window() -> Option<image::RgbaImage> {
 
 #[tauri::command]
 fn get_current_location() -> Result<CoordRecord, String> {
-    focus_scum_window();
-    std::thread::sleep(Duration::from_millis(100));
-    press_ctrl_c();
+    send_ctrl_c_to_scum()?;
     std::thread::sleep(Duration::from_millis(300));
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     let text = clipboard.get_text().map_err(|e| e.to_string())?;
     parse_clipboard(&text).ok_or_else(|| "Keine gültigen Koordinaten in der Zwischenablage".to_string())
 }
 
+fn scum_is_running() -> bool {
+    find_scum_window().is_some()
+}
+
 fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let mut clipboard = Clipboard::new().expect("clipboard");
+        let mut last_scum_status = true;
         loop {
             let tracking = *state.live_tracking.lock().unwrap();
             if tracking {
-                focus_scum_window();
-                std::thread::sleep(Duration::from_millis(100));
-                press_ctrl_c();
+                let scum_running = scum_is_running();
+                if scum_running != last_scum_status {
+                    let _ = app_handle.emit("scum-status", scum_running);
+                    last_scum_status = scum_running;
+                }
+                if !scum_running {
+                    thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
+                    continue;
+                }
+                if send_ctrl_c_to_scum().is_err() {
+                    thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
+                    continue;
+                }
                 thread::sleep(Duration::from_millis(300));
                 if let Ok(text) = clipboard.get_text() {
                     if let Some(record) = parse_clipboard(&text) {
@@ -312,6 +385,68 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 #[tauri::command]
 fn get_data(state: State<Arc<AppState>>) -> AppData {
     state.data.lock().unwrap().clone()
+}
+
+fn escape_csv(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+#[tauri::command]
+fn export_data(state: State<Arc<AppState>>, format: String) -> Result<String, String> {
+    let data = state.data.lock().unwrap().clone();
+    let (filename, filter, content) = match format.as_str() {
+        "json" => {
+            let content = serde_json::to_string_pretty(&serde_json::json!({
+                "exportedAt": Utc::now().to_rfc3339(),
+                "routes": data.routes,
+                "pois": data.pois,
+            })).map_err(|e| e.to_string())?;
+            ("scum-walker-export.json", "JSON-Datei", content)
+        }
+        "csv" => {
+            let mut csv = String::from("type,route_id,route_name,record_index,time,x,y,z,pitch,yaw,roll\n");
+            for route in data.routes {
+                for (index, record) in route.records.iter().enumerate() {
+                    csv.push_str(&format!(
+                        "record,{},{},{},{},{},{},{},{},{},{}\n",
+                        route.id,
+                        escape_csv(&route.name),
+                        index,
+                        record.time.to_rfc3339(),
+                        record.x,
+                        record.y,
+                        record.z,
+                        record.pitch,
+                        record.yaw,
+                        record.roll,
+                    ));
+                }
+            }
+            for poi in data.pois {
+                csv.push_str(&format!(
+                    "poi,{},{},,,{},{},,,,\n",
+                    poi.id,
+                    escape_csv(&poi.label),
+                    poi.x,
+                    poi.y,
+                ));
+            }
+            ("scum-walker-export.csv", "CSV-Datei", csv)
+        }
+        _ => return Err("Unbekanntes Exportformat".to_string()),
+    };
+    let path = rfd::FileDialog::new()
+        .set_title("SCUM Walker exportieren")
+        .set_file_name(filename)
+        .add_filter(filter, &[format.as_str()])
+        .save_file()
+        .ok_or("Export abgebrochen")?;
+    fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
 }
 
 #[tauri::command]
@@ -413,6 +548,17 @@ fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
 }
 
 #[tauri::command]
+fn update_poi(state: State<Arc<AppState>>, id: String, label: String, color: String) -> AppData {
+    let mut data = state.data.lock().unwrap();
+    if let Some(poi) = data.pois.iter_mut().find(|poi| poi.id == id) {
+        poi.label = label;
+        poi.color = color;
+        save_data(&state.data_path, &data);
+    }
+    data.clone()
+}
+
+#[tauri::command]
 fn remove_poi(state: State<Arc<AppState>>, id: String) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.pois.retain(|p| p.id != id);
@@ -463,9 +609,12 @@ struct OverlayConfig {
 }
 
 fn create_overlay_window(app: &tauri::AppHandle, config: &OverlayConfig) -> Result<tauri::WebviewWindow, String> {
+    let w = config.width.filter(|&w| w >= 200).unwrap_or(450);
+    let h = config.height.filter(|&h| h >= 200).unwrap_or(450);
+    eprintln!("[overlay] Erstelle Fenster: {}x{} an {:?},{:?}", w, h, config.x, config.y);
     let mut overlay_builder = WebviewWindowBuilder::new(app, "overlay", tauri::WebviewUrl::App("overlay.html".into()))
         .title("SCUM Walker Overlay")
-        .inner_size(config.width.unwrap_or(450) as f64, config.height.unwrap_or(450) as f64)
+        .inner_size(w as f64, h as f64)
         .min_inner_size(200.0, 200.0)
         .decorations(false)
         .transparent(true)
@@ -474,7 +623,16 @@ fn create_overlay_window(app: &tauri::AppHandle, config: &OverlayConfig) -> Resu
         .skip_taskbar(true)
         .visible(false);
     if let (Some(x), Some(y)) = (config.x, config.y) {
-        overlay_builder = overlay_builder.position(x as f64, y as f64);
+        if x > -10000 && y > -10000 {
+            // outer_position() returns physical pixels, but builder position() expects logical
+            let scale = app.get_webview_window("main")
+                .and_then(|w| w.scale_factor().ok())
+                .unwrap_or(1.0);
+            let logical_x = x as f64 / scale;
+            let logical_y = y as f64 / scale;
+            eprintln!("[overlay] Position logisch: {},{} (aus physisch {},{}, scale {})", logical_x, logical_y, x, y, scale);
+            overlay_builder = overlay_builder.position(logical_x, logical_y);
+        }
     }
     overlay_builder.build().map_err(|e| e.to_string())
 }
@@ -499,6 +657,28 @@ fn save_overlay_config_file(path: &PathBuf, config: &OverlayConfig) {
     if let Ok(json) = serde_json::to_string_pretty(config) {
         let _ = fs::write(path, json);
     }
+}
+
+fn save_overlay_config_from_window(app: &tauri::AppHandle, window: &tauri::Window) {
+    let Ok(position) = window.outer_position() else { return; };
+    let Ok(size) = window.inner_size() else { return; };
+    if position.x <= -32000 || position.y <= -32000 || size.width == 0 || size.height == 0 {
+        return;
+    }
+    // Convert physical pixels to logical for storage
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let logical_w = (size.width as f64 / scale).round() as u32;
+    let logical_h = (size.height as f64 / scale).round() as u32;
+    eprintln!("[overlay] Speichere: {}x{} (logisch) aus {}x{} (physisch) an {},{}", logical_w, logical_h, size.width, size.height, position.x, position.y);
+    let existing = load_overlay_config(&overlay_config_path(app));
+    let config = OverlayConfig {
+        x: Some(position.x),
+        y: Some(position.y),
+        width: Some(logical_w),
+        height: Some(logical_h),
+        opacity: existing.opacity,
+    };
+    save_overlay_config_file(&overlay_config_path(app), &config);
 }
 
 #[tauri::command]
@@ -534,10 +714,29 @@ fn reset_overlay_config(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn livemap_url() -> String {
+    let port = http_server::HTTP_PORT.get().copied().unwrap_or(4488);
+    if port == 80 {
+        "http://127.0.0.1/livemap.html".to_string()
+    } else {
+        format!("http://127.0.0.1:{}/livemap.html", port)
+    }
+}
+
+#[tauri::command]
+fn get_livemap_url() -> String {
+    livemap_url()
+}
+
+#[tauri::command]
+fn is_scum_running() -> bool {
+    scum_is_running()
+}
+
 #[tauri::command]
 fn copy_livemap_url() -> Result<(), String> {
     use arboard::Clipboard;
-    let url = format!("http://127.0.0.1:{}/livemap.html", http_server::HTTP_PORT);
+    let url = livemap_url();
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     clipboard.set_text(url).map_err(|e| e.to_string())?;
     Ok(())
@@ -599,10 +798,21 @@ fn main() {
                         let _ = overlay.close();
                     }
                 }
+            } else if window.label() == "overlay" {
+                match event {
+                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                        save_overlay_config_from_window(&window.app_handle(), window);
+                    }
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        save_overlay_config_from_window(&window.app_handle(), window);
+                    }
+                    _ => {}
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             get_data,
+            export_data,
             get_current_location,
             new_route,
             select_route,
@@ -615,10 +825,13 @@ fn main() {
             toggle_live_tracking,
             is_live_tracking,
             add_poi,
+            update_poi,
             remove_poi,
             paste_poi_screenshot,
             get_poi_image_base64,
             copy_livemap_url,
+            get_livemap_url,
+            is_scum_running,
             open_overlay,
             close_overlay,
             set_overlay_clickthrough,

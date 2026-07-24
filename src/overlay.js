@@ -28,6 +28,7 @@ if (opacitySlider && mapFrame) {
     const value = opacitySlider.value;
     applyOpacity(value);
     safeSetStorage('overlay.opacity', value);
+    saveOverlayState();
   });
 }
 

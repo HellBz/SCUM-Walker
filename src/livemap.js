@@ -155,7 +155,7 @@ function safeSetStorage(key, value) {
   try { localStorage.setItem(key, value); } catch {}
 }
 
-const MAP_SIZE = 1080;
+const MAP_SIZE = 4096;
 const worldMinX = -904800;
 const worldMaxX = 616818;
 const worldMinY = -904800;
@@ -163,8 +163,8 @@ const worldMaxY = 618818;
 const worldWidth = worldMaxX - worldMinX;
 const worldHeight = worldMaxY - worldMinY;
 
-const ZOOM_MIN = 0.6;
-const ZOOM_MAX = 8.0;
+const ZOOM_MIN = 0.15;
+const ZOOM_MAX = 12.0;
 const ZOOM_STEP = 0.25;
 
 let zoom = parseFloat(safeGetStorage('livemap.zoom', '1.5')) || 1.5;
@@ -277,22 +277,26 @@ function draw() {
     ctx.stroke();
 
     if (typeof currentPos.yaw === 'number') {
-      const len = 12000;
-      const yawRad = currentPos.yaw * Math.PI / 180;
-      const end = worldToScreen(currentPos.x + len * Math.cos(yawRad), currentPos.y + len * Math.sin(yawRad));
-      const angle = Math.atan2(end.y - pt.y, end.x - pt.x);
+      const angle = (currentPos.yaw + 180) * Math.PI / 180;
+      const outerRadius = 14;
+      const arrowLength = 9;
+      const halfWidth = 4;
+      const tip = {
+        x: pt.x + (outerRadius + arrowLength) * Math.cos(angle),
+        y: pt.y + (outerRadius + arrowLength) * Math.sin(angle)
+      };
+      const base = {
+        x: pt.x + outerRadius * Math.cos(angle),
+        y: pt.y + outerRadius * Math.sin(angle)
+      };
+      const perpendicular = {
+        x: -Math.sin(angle) * halfWidth,
+        y: Math.cos(angle) * halfWidth
+      };
       ctx.beginPath();
-      ctx.moveTo(pt.x, pt.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.strokeStyle = '#00ffcc';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      const headLen = 10;
-      ctx.beginPath();
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 6), end.y - headLen * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 6), end.y - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(base.x + perpendicular.x, base.y + perpendicular.y);
+      ctx.lineTo(base.x - perpendicular.x, base.y - perpendicular.y);
       ctx.closePath();
       ctx.fillStyle = '#00ffcc';
       ctx.fill();
@@ -350,18 +354,7 @@ async function fetchData() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const payload = await res.json();
     data = payload.data || payload;
-    currentPos = null;
-    if (payload.current_position) {
-      currentPos = payload.current_position;
-    } else if (data.current_route_id) {
-      const route = data.routes.find(r => r.id === data.current_route_id);
-      if (route && route.records.length) {
-        currentPos = route.records[route.records.length - 1];
-      }
-    }
-    if (!currentPos && data.routes.length && data.routes[0].records.length) {
-      currentPos = data.routes[0].records[data.routes[0].records.length - 1];
-    }
+    currentPos = payload.current_position || null;
 
     if (!connected) {
       statusEl.textContent = currentPos

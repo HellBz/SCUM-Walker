@@ -13,6 +13,7 @@
     </div>
 
     <div id="status">Bereit</div>
+    <div id="scumStatus" class="scum-status running">SCUM: läuft</div>
 
     <div class="section">
       <h3>Live-Map</h3>
@@ -21,11 +22,13 @@
       </div>
       <div class="button-row">
         <button id="openOverlay" title="Overlay öffnen">Overlay öffnen</button>
-        <button id="lockOverlay" title="Overlay sperren / Klick-durch">🔒</button>
-        <button id="closeOverlay" title="Overlay schließen">✕</button>
       </div>
       <div style="height:6px"></div>
-      <button id="resetOverlayPosition">Overlay-Position zurücksetzen</button>
+      <div class="button-row overlay-actions">
+        <button id="lockOverlay" title="Overlay sperren / Klick-durch">🔒</button>
+        <button id="closeOverlay" title="Overlay schließen">✕</button>
+        <button id="resetOverlayPosition" title="Overlay-Position zurücksetzen">↺</button>
+      </div>
       <div style="height:6px"></div>
       <label class="url-label">URL für OBS/Browser:</label>
       <div class="url-row">
@@ -92,7 +95,7 @@
 
   <div id="poiDialog" class="dialog">
     <div class="dialog-content">
-      <h3>POI hinzufügen</h3>
+      <h3 id="poiDialogTitle">POI hinzufügen</h3>
       <input type="text" id="poiLabel" placeholder="Name" maxlength="64">
       <div class="custom-color-row">
         <input type="color" id="poiColorPicker" value="#ff44d3">
