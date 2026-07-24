@@ -27,13 +27,29 @@ let data = { routes: [], current_route_id: null, pois: [] };
 let isRecording = false;
 let currentCoord = null;
 
-// World bounds in SCUM game coordinates
-const worldMinX = -904800;
-const worldMaxX = 616818;
-const worldMinY = -904800;
-const worldMaxY = 618818;
-const worldWidth = worldMaxX - worldMinX;
-const worldHeight = worldMaxY - worldMinY;
+// World bounds in SCUM game coordinates (default, overridden by /api/bounds)
+let worldMinX = -904800;
+let worldMaxX = 619318;
+let worldMinY = -904800;
+let worldMaxY = 618818;
+let worldWidth = worldMaxX - worldMinX;
+let worldHeight = worldMaxY - worldMinY;
+
+// Fetch live bounds from HTTP server
+async function fetchBounds() {
+  try {
+    const url = await invoke('get_livemap_url');
+    if (url) {
+      const base = new URL(url);
+      const r = await fetch(`${base.protocol}//${base.host}/api/bounds`);
+      const b = await r.json();
+      worldMinX = b.min_x; worldMaxX = b.max_x;
+      worldMinY = b.min_y; worldMaxY = b.max_y;
+      worldWidth = worldMaxX - worldMinX;
+      worldHeight = worldMaxY - worldMinY;
+    }
+  } catch {}
+}
 
 // Tile system: 256px tiles, zoom 0-6. Image upscaled to 16384x16384 (no padding).
 // Zoom 0-3 bundled, 4-6 via download. maxNativeZoom adjusts dynamically.
@@ -103,10 +119,24 @@ let tileLayer = null;
 
 async function initTileLayer() {
   await fetchTileBaseUrl();
+  await fetchBounds();
+  setInterval(fetchBounds, 2000);
+  let maxNative = BUNDLED_MAX_ZOOM;
+  try {
+    const installed = await invoke('check_hires_tiles');
+    if (installed) {
+      maxNative = MAX_ZOOM;
+      if (downloadHiresBtn) {
+        downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
+        downloadHiresBtn.disabled = true;
+      }
+      if (hiresStatus) hiresStatus.textContent = '✓ Hi-Res Tiles installiert';
+    }
+  } catch {}
   tileLayer = L.tileLayer(tileBaseUrl + '/tiles/{z}/{x}/{y}.png', {
     minZoom: MIN_ZOOM,
     maxZoom: MAX_ZOOM,
-    maxNativeZoom: BUNDLED_MAX_ZOOM,
+    maxNativeZoom: maxNative,
     tileSize: 256,
     noWrap: true,
     bounds: L.latLngBounds([0, 0], [MAP_UNITS, MAP_UNITS]),
@@ -675,6 +705,10 @@ async function checkHiresTiles() {
       hiresStatus.textContent = '✓ Hi-Res Tiles installiert';
       downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
       downloadHiresBtn.disabled = true;
+      if (tileLayer) {
+        tileLayer.options.maxNativeZoom = MAX_ZOOM;
+        tileLayer.redraw();
+      }
     } else {
       hiresStatus.textContent = 'Nur Zoom 0-3 verfügbar. Hi-Res für Zoom 4-6.';
     }

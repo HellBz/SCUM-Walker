@@ -132,13 +132,28 @@
 
   const API_BASE = window.location.origin;
 
-  // World bounds in SCUM game coordinates
-  const worldMinX = -904800;
-  const worldMaxX = 616818;
-  const worldMinY = -904800;
-  const worldMaxY = 618818;
-  const worldWidth = worldMaxX - worldMinX;
-  const worldHeight = worldMaxY - worldMinY;
+  // World bounds in SCUM game coordinates (default, overridden by /api/bounds)
+  let worldMinX = -904800;
+  let worldMaxX = 619318;
+  let worldMinY = -904800;
+  let worldMaxY = 618818;
+  let worldWidth = worldMaxX - worldMinX;
+  let worldHeight = worldMaxY - worldMinY;
+
+  // Fetch live bounds from server
+  function fetchBounds() {
+    fetch(API_BASE + '/api/bounds')
+      .then(r => r.json())
+      .then(b => {
+        worldMinX = b.min_x; worldMaxX = b.max_x;
+        worldMinY = b.min_y; worldMaxY = b.max_y;
+        worldWidth = worldMaxX - worldMinX;
+        worldHeight = worldMaxY - worldMinY;
+      })
+      .catch(() => {});
+  }
+  fetchBounds();
+  setInterval(fetchBounds, 2000);
 
   // Tile system: 256px tiles, zoom 0-6. Image upscaled to 16384x16384 (no padding).
   // Zoom 0-3 bundled, 4-6 via download. maxNativeZoom adjusts dynamically.
@@ -183,15 +198,22 @@
     preferCanvas: true,
   });
 
-  // Tile layer
-  const tileLayer = L.tileLayer(API_BASE + '/tiles/{z}/{x}/{y}.png', {
-    minZoom: MIN_ZOOM,
-    maxZoom: MAX_ZOOM,
-    maxNativeZoom: BUNDLED_MAX_ZOOM,
-    tileSize: 256,
-    noWrap: true,
-    bounds: L.latLngBounds([0, 0], [MAP_UNITS, MAP_UNITS]),
-  }).addTo(map);
+  // Tile layer - check for hi-res tiles before setting maxNativeZoom
+  let tileLayer = null;
+  let maxNativeZoom = BUNDLED_MAX_ZOOM;
+  fetch(API_BASE + '/tiles/4/0/0.png')
+    .then(resp => { if (resp.ok) maxNativeZoom = MAX_ZOOM; })
+    .catch(() => {})
+    .finally(() => {
+      tileLayer = L.tileLayer(API_BASE + '/tiles/{z}/{x}/{y}.png', {
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        maxNativeZoom: maxNativeZoom,
+        tileSize: 256,
+        noWrap: true,
+        bounds: L.latLngBounds([0, 0], [MAP_UNITS, MAP_UNITS]),
+      }).addTo(map);
+    });
 
   // Prevent panning outside map
   map.setMaxBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);

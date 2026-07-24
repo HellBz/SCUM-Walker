@@ -486,7 +486,46 @@ fn export_data(state: State<Arc<AppState>>, format: String) -> Result<String, St
 }
 
 const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/latest/download/tiles-hires.zip";
-const HIRES_TILES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles");
+const LOWRES_TILES_ZIP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles-lowres.zip"));
+
+fn get_tiles_dir(app: &tauri::AppHandle) -> PathBuf {
+    app.path().app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("tiles")
+}
+
+fn ensure_lowres_tiles(tiles_dir: &PathBuf) {
+    let z0 = tiles_dir.join("0");
+    if z0.exists() && z0.is_dir() {
+        return;
+    }
+    eprintln!("[tiles] Entpacke Low-Res Tiles nach {}", tiles_dir.display());
+    let cursor = std::io::Cursor::new(LOWRES_TILES_ZIP);
+    match zip::ZipArchive::new(cursor) {
+        Ok(mut archive) => {
+            for i in 0..archive.len() {
+                if let Ok(mut file) = archive.by_index(i) {
+                    let outpath = match file.enclosed_name() {
+                        Some(path) => tiles_dir.join(path),
+                        None => continue,
+                    };
+                    if file.is_dir() {
+                        std::fs::create_dir_all(&outpath).ok();
+                        continue;
+                    }
+                    if let Some(parent) = outpath.parent() {
+                        std::fs::create_dir_all(parent).ok();
+                    }
+                    if let Ok(mut outfile) = std::fs::File::create(&outpath) {
+                        std::io::copy(&mut file, &mut outfile).ok();
+                    }
+                }
+            }
+            eprintln!("[tiles] Low-Res Tiles entpackt");
+        }
+        Err(e) => eprintln!("[tiles] Fehler beim Entpacken: {}", e),
+    }
+}
 
 #[tauri::command]
 fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -499,7 +538,7 @@ fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
     let cursor = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("ZIP konnte nicht geöffnet werden: {}", e))?;
 
-    let tiles_dir = std::path::Path::new(HIRES_TILES_DIR);
+    let tiles_dir = get_tiles_dir(&app_handle);
     let mut count = 0;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| format!("ZIP-Fehler: {}", e))?;
@@ -528,8 +567,8 @@ fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn check_hires_tiles() -> bool {
-    let z4 = std::path::Path::new(HIRES_TILES_DIR).join("4");
+fn check_hires_tiles(app_handle: tauri::AppHandle) -> bool {
+    let z4 = get_tiles_dir(&app_handle).join("4");
     z4.exists() && z4.is_dir()
 }
 
@@ -705,6 +744,10 @@ fn create_overlay_window(app: &tauri::AppHandle, config: &OverlayConfig) -> Resu
         .resizable(true)
         .skip_taskbar(true)
         .visible(false);
+    #[cfg(windows)]
+    {
+        overlay_builder = overlay_builder.transparent(true);
+    }
     if let (Some(x), Some(y)) = (config.x, config.y) {
         if x > -10000 && y > -10000 {
             // outer_position() returns physical pixels, but builder position() expects logical
@@ -866,7 +909,10 @@ fn main() {
             });
 
             start_recorder(state.clone(), app.handle().clone());
-            http_server::start_http_server(state.clone());
+            let tiles_dir = get_tiles_dir(&app.handle());
+            std::fs::create_dir_all(&tiles_dir).ok();
+            ensure_lowres_tiles(&tiles_dir);
+            http_server::start_http_server(state.clone(), tiles_dir.display().to_string());
             app.manage(state);
 
             let overlay_config = load_overlay_config(&overlay_config_path(&app.handle()));
