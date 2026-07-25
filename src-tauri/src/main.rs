@@ -489,9 +489,14 @@ const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/la
 const LOWRES_TILES_ZIP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles-lowres.zip"));
 
 fn get_tiles_dir(app: &tauri::AppHandle) -> PathBuf {
-    app.path().app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("tiles")
+    match app.path().app_data_dir() {
+        Ok(dir) => dir.join("tiles"),
+        Err(e) => {
+            eprintln!("[tiles] WARN: app_data_dir() fehlgeschlagen: {}, nutze lokales Verzeichnis", e);
+            let fallback = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            fallback.join("tiles")
+        }
+    }
 }
 
 fn ensure_lowres_tiles(tiles_dir: &PathBuf) {
@@ -910,7 +915,11 @@ fn main() {
 
             start_recorder(state.clone(), app.handle().clone());
             let tiles_dir = get_tiles_dir(&app.handle());
-            std::fs::create_dir_all(&tiles_dir).ok();
+            if let Err(e) = std::fs::create_dir_all(&tiles_dir) {
+                eprintln!("[tiles] FEHLER: Konnte Verzeichnis nicht erstellen: {} -> {}", tiles_dir.display(), e);
+            } else {
+                eprintln!("[tiles] Verzeichnis: {}", tiles_dir.display());
+            }
             ensure_lowres_tiles(&tiles_dir);
             http_server::start_http_server(state.clone(), tiles_dir.display().to_string());
             app.manage(state);
