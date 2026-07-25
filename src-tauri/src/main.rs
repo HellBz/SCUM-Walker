@@ -12,6 +12,8 @@ use std::time::Duration;
 use tauri::{Emitter, Manager, State};
 use tauri::webview::WebviewWindowBuilder;
 
+use crate::http_server::ws_broadcast;
+
 mod http_server;
 
 #[cfg(windows)]
@@ -24,7 +26,7 @@ use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
     GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
-    SRCCOPY,
+    HDC, SRCCOPY,
 };
 #[cfg(windows)]
 use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
@@ -34,11 +36,11 @@ use windows::Win32::System::Threading::{
 };
 #[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowW, GetClientRect, GetWindowThreadProcessId, IsWindowVisible,
-    PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP,
+    EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,
+    IsWindowVisible, PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP,
 };
 
-const INTERVAL_SECONDS: u64 = 10;
+const DEFAULT_INTERVAL_SECONDS: u64 = 10;
 const SCUM_WINDOW_TITLES: &[&str] = &["SCUM", "SCUM ", "SCUM Early Access"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +98,12 @@ struct AppData {
     routes: Vec<Route>,
     current_route_id: Option<String>,
     pois: Vec<Poi>,
+    #[serde(default = "default_interval")]
+    tracking_interval: u64,
+}
+
+fn default_interval() -> u64 {
+    DEFAULT_INTERVAL_SECONDS
 }
 
 pub(crate) struct AppState {
@@ -229,6 +237,8 @@ const VK_C: u16 = 0x43;
 #[cfg(windows)]
 const VK_T: u16 = 0x54;
 #[cfg(windows)]
+const VK_F9: u16 = 0x78;
+#[cfg(windows)]
 const VK_RETURN: u16 = 0x0D;
 #[cfg(windows)]
 const VK_ESCAPE: u16 = 0x1B;
@@ -240,12 +250,25 @@ fn is_key_pressed(vk: u16) -> bool {
 }
 
 #[cfg(windows)]
+fn is_scum_foreground() -> bool {
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0 == 0 {
+        return false;
+    }
+    find_scum_window().map_or(false, |scum_hwnd| scum_hwnd == fg)
+}
+
+#[cfg(not(windows))]
+fn is_scum_foreground() -> bool { false }
+
+#[cfg(windows)]
 fn start_chat_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         loop {
-            if is_key_pressed(VK_T) {
+            if is_key_pressed(VK_T) && is_scum_foreground() {
                 *state.chat_paused.lock().unwrap() = true;
                 let _ = app_handle.emit("chat-paused", true);
+                ws_broadcast(serde_json::json!({"type": "chat-paused", "value": true}).to_string());
                 eprintln!("[chat-watcher] Chat geöffnet (T) - pausiere Tracking");
 
                 // Warte auf Enter oder ESC
@@ -277,8 +300,120 @@ fn start_chat_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 
                 *state.chat_paused.lock().unwrap() = false;
                 let _ = app_handle.emit("chat-paused", false);
+                ws_broadcast(serde_json::json!({"type": "chat-paused", "value": false}).to_string());
                 eprintln!("[chat-watcher] Chat geschlossen - resume");
                 thread::sleep(Duration::from_millis(300));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
+}
+
+#[cfg(windows)]
+fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut clipboard = Clipboard::new().expect("clipboard");
+        let processing = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        loop {
+            if is_key_pressed(VK_F9) && is_scum_foreground() {
+                // Block if already processing
+                if processing.load(std::sync::atomic::Ordering::SeqCst) {
+                    while is_key_pressed(VK_F9) {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    continue;
+                }
+                processing.store(true, std::sync::atomic::Ordering::SeqCst);
+                eprintln!("[hotkey] F9 gedrückt - erstelle POI + Screenshot");
+                ws_broadcast(serde_json::json!({"type": "poi-creating"}).to_string());
+
+                // 1. Ctrl+C an SCUM senden für Koordinaten
+                if send_ctrl_c_to_scum().is_err() {
+                    eprintln!("[hotkey] Ctrl+C fehlgeschlagen");
+                    processing.store(false, std::sync::atomic::Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+                thread::sleep(Duration::from_millis(300));
+
+                // 2. Zwischenablage auslesen
+                let text = match clipboard.get_text() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("[hotkey] Zwischenablage-Fehler: {}", e);
+                        processing.store(false, std::sync::atomic::Ordering::SeqCst);
+                        continue;
+                    }
+                };
+
+                let record = match parse_clipboard(&text) {
+                    Some(r) => r,
+                    None => {
+                        eprintln!("[hotkey] Keine gültigen Koordinaten in Zwischenablage");
+                        processing.store(false, std::sync::atomic::Ordering::SeqCst);
+                        continue;
+                    }
+                };
+
+                // 3. POI erstellen
+                let poi_id = format!("{}", Utc::now().timestamp_millis());
+                let poi_label = format!("POI {}", poi_id);
+                let poi = Poi {
+                    id: poi_id.clone(),
+                    label: poi_label.clone(),
+                    x: record.x,
+                    y: record.y,
+                    poi_type: "auto".to_string(),
+                    color: "#ff8800".to_string(),
+                    image_path: None,
+                };
+
+                // 4. Screenshot in separatem Thread (blockiert nicht HTTP-Server)
+                let img = {
+                    let hwnd = find_scum_window();
+                    if let Some(hwnd) = hwnd {
+                        let handle = std::thread::spawn(move || capture_window(hwnd));
+                        match handle.join() {
+                            Ok(img) => img,
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                let image_dir = state.data_path.parent().unwrap_or(&state.data_path).join("poi_images");
+                let _ = std::fs::create_dir_all(&image_dir);
+
+                let mut poi_with_image = poi.clone();
+                if let Some(img) = img {
+                    let filename = format!("poi_{}.png", poi_id);
+                    let path = image_dir.join(&filename);
+                    if img.save_with_format(&path, image::ImageFormat::Png).is_ok() {
+                        poi_with_image.image_path = Some(filename);
+                    }
+                }
+
+                // 5. POI in Daten speichern (kurzer Lock)
+                {
+                    let mut data = state.data.lock().unwrap();
+                    data.pois.push(poi_with_image);
+                    save_data(&state.data_path, &data);
+                    let data_clone = data.clone();
+                    let _ = app_handle.emit("data-updated", data_clone.clone());
+                    ws_broadcast(serde_json::json!({"type": "data-updated", "data": data_clone}).to_string());
+                }
+
+                eprintln!("[hotkey] POI erstellt: {} bei X={} Y={}", poi_label, record.x, record.y);
+                let _ = app_handle.emit("hotkey-poi-created", &poi_label);
+                ws_broadcast(serde_json::json!({"type": "poi-created", "label": poi_label}).to_string());
+
+                processing.store(false, std::sync::atomic::Ordering::SeqCst);
+
+                // Verhindern, dass F9 mehrfach triggert
+                while is_key_pressed(VK_F9) {
+                    thread::sleep(Duration::from_millis(50));
+                }
             }
             thread::sleep(Duration::from_millis(50));
         }
@@ -307,22 +442,27 @@ fn send_ctrl_c_to_scum() -> Result<(), String> {
 
 #[cfg(windows)]
 fn capture_window(hwnd: HWND) -> Option<image::RgbaImage> {
-    unsafe {
-        let hdc_window = GetDC(hwnd);
-        if hdc_window.0 == 0 {
-            return None;
-        }
+    // PrintWindow is in Win32_Storage_Xps which we don't have as feature.
+    // Use direct FFI call instead.
+    extern "system" {
+        fn PrintWindow(hwnd: HWND, hdcblt: HDC, nflags: u32) -> i32;
+    }
+    const PW_RENDERFULLCONTENT: u32 = 0x00000002;
 
+    unsafe {
         let mut rect: RECT = std::mem::zeroed();
         if GetClientRect(hwnd, &mut rect).is_err() {
-            let _ = ReleaseDC(hwnd, hdc_window);
             return None;
         }
 
         let width = (rect.right - rect.left) as u32;
         let height = (rect.bottom - rect.top) as u32;
         if width == 0 || height == 0 {
-            let _ = ReleaseDC(hwnd, hdc_window);
+            return None;
+        }
+
+        let hdc_window = GetDC(hwnd);
+        if hdc_window.0 == 0 {
             return None;
         }
 
@@ -341,14 +481,21 @@ fn capture_window(hwnd: HWND) -> Option<image::RgbaImage> {
 
         let _ = SelectObject(hdc_mem, hbm);
 
-        let _ = BitBlt(
-            hdc_mem,
-            0, 0,
-            width as i32, height as i32,
-            hdc_window,
-            0, 0,
-            SRCCOPY,
-        );
+        // PrintWindow with PW_RENDERFULLCONTENT forces rendering of current frame
+        // even for hardware-accelerated apps like Unreal Engine
+        let result = PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT);
+
+        if result == 0 {
+            // Fallback to BitBlt if PrintWindow fails
+            let _ = BitBlt(
+                hdc_mem,
+                0, 0,
+                width as i32, height as i32,
+                hdc_window,
+                0, 0,
+                SRCCOPY,
+            );
+        }
 
         let mut bmi: BITMAPINFO = std::mem::zeroed();
         bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
@@ -421,10 +568,12 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 let scum_running = scum_is_running();
                 if scum_running != last_scum_status {
                     let _ = app_handle.emit("scum-status", scum_running);
+                    ws_broadcast(serde_json::json!({"type": "scum-status", "value": scum_running}).to_string());
                     last_scum_status = scum_running;
                 }
                 if !scum_running {
-                    thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
+                    let interval = state.data.lock().unwrap().tracking_interval;
+                    thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
                 #[cfg(windows)]
@@ -435,7 +584,8 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     }
                 }
                 if send_ctrl_c_to_scum().is_err() {
-                    thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
+                    let interval = state.data.lock().unwrap().tracking_interval;
+                    thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
                 thread::sleep(Duration::from_millis(500));
@@ -458,15 +608,19 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                                     save_data(&state.data_path, &data);
                                 }
                             }
+                            let data_clone = data.clone();
                             drop(data);
+                            ws_broadcast(serde_json::json!({"type": "data-updated", "data": data_clone}).to_string());
                         }
 
                         if should_emit {
-                            let _ = app_handle.emit("coord-update", record);
+                            let _ = app_handle.emit("coord-update", record.clone());
+                            ws_broadcast(serde_json::json!({"type": "coord-update", "data": record}).to_string());
                         }
                     }
                 }
-                thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
+                let interval = state.data.lock().unwrap().tracking_interval;
+                thread::sleep(Duration::from_secs(interval));
             } else {
                 thread::sleep(Duration::from_millis(500));
             }
@@ -624,6 +778,7 @@ fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     let _ = app_handle.emit("hires-download-progress", format!("Fertig! {} Tiles entpackt.", count));
     let _ = app_handle.emit("hires-tiles-installed", ());
+    ws_broadcast(serde_json::json!({"type": "hires-tiles-installed"}).to_string());
     Ok(())
 }
 
@@ -640,7 +795,9 @@ fn new_route(state: State<Arc<AppState>>, name: String, color: String) -> AppDat
     data.current_route_id = Some(route.id.clone());
     data.routes.push(route);
     save_data(&state.data_path, &data);
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -648,7 +805,9 @@ fn select_route(state: State<Arc<AppState>>, id: String) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.current_route_id = Some(id);
     save_data(&state.data_path, &data);
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -658,7 +817,9 @@ fn rename_route(state: State<Arc<AppState>>, id: String, name: String) -> AppDat
         route.name = name;
         save_data(&state.data_path, &data);
     }
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -669,7 +830,9 @@ fn delete_route(state: State<Arc<AppState>>, id: String) -> AppData {
         data.current_route_id = data.routes.last().map(|r| r.id.clone());
     }
     save_data(&state.data_path, &data);
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -679,7 +842,9 @@ fn set_route_color(state: State<Arc<AppState>>, id: String, color: String) -> Ap
         route.color = color;
         save_data(&state.data_path, &data);
     }
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -689,21 +854,26 @@ fn toggle_route_visibility(state: State<Arc<AppState>>, id: String) -> AppData {
         route.visible = !route.visible;
         save_data(&state.data_path, &data);
     }
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
 fn toggle_recording(state: State<Arc<AppState>>) -> bool {
     let mut recording = state.recording.lock().unwrap();
     *recording = !*recording;
+    let is_recording = *recording;
     // recording requires live tracking
-    if *recording {
+    if is_recording {
         let mut tracking = state.live_tracking.lock().unwrap();
         if !*tracking {
             *tracking = true;
+            ws_broadcast(serde_json::json!({"type": "tracking-state", "recording": true, "live_tracking": true}).to_string());
         }
     }
-    *recording
+    ws_broadcast(serde_json::json!({"type": "tracking-state", "recording": is_recording, "live_tracking": *state.live_tracking.lock().unwrap()}).to_string());
+    is_recording
 }
 
 #[tauri::command]
@@ -715,7 +885,9 @@ fn is_recording(state: State<Arc<AppState>>) -> bool {
 fn toggle_live_tracking(state: State<Arc<AppState>>) -> bool {
     let mut tracking = state.live_tracking.lock().unwrap();
     *tracking = !*tracking;
-    *tracking
+    let is_tracking = *tracking;
+    ws_broadcast(serde_json::json!({"type": "tracking-state", "recording": *state.recording.lock().unwrap(), "live_tracking": is_tracking}).to_string());
+    is_tracking
 }
 
 #[tauri::command]
@@ -724,11 +896,28 @@ fn is_live_tracking(state: State<Arc<AppState>>) -> bool {
 }
 
 #[tauri::command]
+fn set_tracking_interval(state: State<Arc<AppState>>, seconds: u64) {
+    if seconds >= 1 {
+        let mut data = state.data.lock().unwrap();
+        data.tracking_interval = seconds;
+        save_data(&state.data_path, &data);
+        ws_broadcast(serde_json::json!({"type": "tracking-interval", "value": seconds}).to_string());
+    }
+}
+
+#[tauri::command]
+fn get_tracking_interval(state: State<Arc<AppState>>) -> u64 {
+    state.data.lock().unwrap().tracking_interval
+}
+
+#[tauri::command]
 fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.pois.push(poi);
     save_data(&state.data_path, &data);
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -739,7 +928,9 @@ fn update_poi(state: State<Arc<AppState>>, id: String, label: String, color: Str
         poi.color = color;
         save_data(&state.data_path, &data);
     }
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
@@ -747,14 +938,13 @@ fn remove_poi(state: State<Arc<AppState>>, id: String) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.pois.retain(|p| p.id != id);
     save_data(&state.data_path, &data);
-    data.clone()
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
 }
 
 #[tauri::command]
 fn paste_poi_screenshot(state: State<Arc<AppState>>, id: String) -> Result<AppData, String> {
-    focus_scum_window();
-    std::thread::sleep(Duration::from_millis(300));
-
     let img = capture_scum_window().ok_or_else(|| "Konnte SCUM-Fenster nicht aufnehmen".to_string())?;
 
     let image_dir = state.data_path.parent().unwrap_or(&state.data_path).join("poi_images");
@@ -768,7 +958,9 @@ fn paste_poi_screenshot(state: State<Arc<AppState>>, id: String) -> Result<AppDa
         poi.image_path = Some(filename);
         save_data(&state.data_path, &data);
     }
-    Ok(data.clone())
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    Ok(clone)
 }
 
 #[tauri::command]
@@ -781,6 +973,28 @@ fn get_poi_image_base64(state: State<Arc<AppState>>, id: String) -> Result<Strin
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     use base64::{prelude::BASE64_STANDARD, Engine};
     Ok(BASE64_STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+fn upload_poi_image(state: State<Arc<AppState>>, id: String, base64_data: String) -> Result<AppData, String> {
+    let image_dir = state.data_path.parent().unwrap_or(&state.data_path).join("poi_images");
+    std::fs::create_dir_all(&image_dir).map_err(|e| e.to_string())?;
+    let filename = format!("poi_{}.png", id);
+    let path = image_dir.join(&filename);
+
+    use base64::{prelude::BASE64_STANDARD, Engine};
+    let bytes = BASE64_STANDARD.decode(base64_data.trim())
+        .map_err(|e| format!("Base64 decode Fehler: {}", e))?;
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+
+    let mut data = state.data.lock().unwrap();
+    if let Some(poi) = data.pois.iter_mut().find(|p| p.id == id) {
+        poi.image_path = Some(filename);
+        save_data(&state.data_path, &data);
+    }
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    Ok(clone)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -972,6 +1186,8 @@ fn main() {
 
             #[cfg(windows)]
             start_chat_watcher(state.clone(), app.handle().clone());
+            #[cfg(windows)]
+            start_hotkey_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
             let tiles_dir = get_tiles_dir(&app.handle());
             if let Err(e) = std::fs::create_dir_all(&tiles_dir) {
@@ -1023,11 +1239,14 @@ fn main() {
             is_recording,
             toggle_live_tracking,
             is_live_tracking,
+            set_tracking_interval,
+            get_tracking_interval,
             add_poi,
             update_poi,
             remove_poi,
             paste_poi_screenshot,
             get_poi_image_base64,
+            upload_poi_image,
             copy_livemap_url,
             get_livemap_url,
             is_scum_running,

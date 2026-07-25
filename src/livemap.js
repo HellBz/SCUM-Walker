@@ -3,6 +3,17 @@
   window.__scumWalkerLiveMapLoaded = true;
 
   const statusEl = document.getElementById('status');
+  const toastEl = document.getElementById('toast');
+  let lastPoiCount = 0;
+  let toastTimer = null;
+
+  function showToast(msg) {
+    if (!toastEl) return;
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
+  }
   const isTauri = typeof window.__TAURI__ !== 'undefined';
   document.body.classList.add('auto-hide-controls');
   if (isTauri) document.body.classList.add('tauri-mode');
@@ -140,20 +151,12 @@
   let worldWidth = worldMaxX - worldMinX;
   let worldHeight = worldMaxY - worldMinY;
 
-  // Fetch live bounds from server
-  function fetchBounds() {
-    fetch(API_BASE + '/api/bounds')
-      .then(r => r.json())
-      .then(b => {
-        worldMinX = b.min_x; worldMaxX = b.max_x;
-        worldMinY = b.min_y; worldMaxY = b.max_y;
-        worldWidth = worldMaxX - worldMinX;
-        worldHeight = worldMaxY - worldMinY;
-      })
-      .catch(() => {});
+  function applyBounds(b) {
+    worldMinX = b.min_x; worldMaxX = b.max_x;
+    worldMinY = b.min_y; worldMaxY = b.max_y;
+    worldWidth = worldMaxX - worldMinX;
+    worldHeight = worldMaxY - worldMinY;
   }
-  fetchBounds();
-  setInterval(fetchBounds, 2000);
 
   // Tile system: 256px tiles, zoom 0-6. Image upscaled to 16384x16384 (no padding).
   // Zoom 0-3 bundled, 4-6 via download. maxNativeZoom adjusts dynamically.
@@ -198,22 +201,22 @@
     preferCanvas: true,
   });
 
-  // Tile layer - check for hi-res tiles before setting maxNativeZoom
+  // Tile layer - created after WebSocket init provides hires status
   let tileLayer = null;
   let maxNativeZoom = BUNDLED_MAX_ZOOM;
-  fetch(API_BASE + '/tiles/4/0/0.png')
-    .then(resp => { if (resp.ok) maxNativeZoom = MAX_ZOOM; })
-    .catch(() => {})
-    .finally(() => {
-      tileLayer = L.tileLayer(API_BASE + '/tiles/{z}/{x}/{y}.png', {
-        minZoom: MIN_ZOOM,
-        maxZoom: MAX_ZOOM,
-        maxNativeZoom: maxNativeZoom,
-        tileSize: 256,
-        noWrap: true,
-        bounds: L.latLngBounds([0, 0], [MAP_UNITS, MAP_UNITS]),
-      }).addTo(map);
-    });
+
+  function initTileLayer(hasHires) {
+    if (tileLayer) return; // already initialized
+    if (hasHires) maxNativeZoom = MAX_ZOOM;
+    tileLayer = L.tileLayer(API_BASE + '/tiles/{z}/{x}/{y}.png', {
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      maxNativeZoom: maxNativeZoom,
+      tileSize: 256,
+      noWrap: true,
+      bounds: L.latLngBounds([0, 0], [MAP_UNITS, MAP_UNITS]),
+    }).addTo(map);
+  }
 
   // Prevent panning outside map
   map.setMaxBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
@@ -250,7 +253,7 @@
   document.getElementById('zoomOut').addEventListener('click', () => map.zoomOut());
   document.getElementById('fitBtn').addEventListener('click', () => {
     disableFollow();
-    map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
+    map.flyToBounds([[0, 0], [MAP_UNITS, MAP_UNITS]], { duration: 0.8 });
   });
 
   // Data state
@@ -313,6 +316,30 @@
         fillOpacity: 1,
       }).addTo(map);
       if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
+
+      if (poi.image_path) {
+        const imgUrl = API_BASE + '/api/poi_image/' + poi.id;
+        let hoverBound = false;
+        marker.on('mouseover', () => {
+          if (!hoverBound) {
+            marker.bindPopup(`<img src="${imgUrl}" style="max-width:200px;max-height:150px;border-radius:4px">`, { maxWidth: 250, closeButton: false, autoPan: false });
+            hoverBound = true;
+          }
+          marker.openPopup();
+        });
+        marker.on('click', () => {
+          marker.closePopup();
+          const overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
+          const img = document.createElement('img');
+          img.src = imgUrl;
+          img.style.cssText = 'max-width:90vw;max-height:85vh;border-radius:8px;border:1px solid #00ffcc55';
+          overlay.appendChild(img);
+          overlay.onclick = () => document.body.removeChild(overlay);
+          document.body.appendChild(overlay);
+        });
+      }
+
       poiMarkers.push(marker);
     });
   }
@@ -342,7 +369,7 @@
   function centerOnCurrentPos() {
     if (!currentPos) return;
     const ll = gameToLatLng(currentPos.x, currentPos.y);
-    map.panTo(ll);
+    map.panTo(ll, { animate: true, duration: 0.5 });
   }
 
   document.getElementById('centerBtn').addEventListener('click', () => {
@@ -351,44 +378,147 @@
 
   map.on('dragstart', disableFollow);
 
-  async function fetchData() {
-    try {
-      const res = await fetch(API_BASE + '/api/data');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const payload = await res.json();
-      const newData = payload.data || payload;
-      const newPos = payload.current_position || null;
-
-      const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
-      const poisChanged = JSON.stringify(newData.pois) !== JSON.stringify(data.pois);
-      const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
-
-      data = newData;
-      currentPos = newPos;
-
-      if (routesChanged) renderRoutes();
-      if (poisChanged) renderPois();
-      if (posChanged) renderLiveMarker();
-
-      if (!connected) {
+  function handleWsMessage(msg) {
+    const payload = JSON.parse(msg);
+    switch (payload.type) {
+      case 'login-success': {
+        // Full settings received after login handshake
+        const newData = payload.data || { routes: [], current_route_id: null, pois: [] };
+        const newPos = payload.current_position || null;
+        if (payload.bounds) applyBounds(payload.bounds);
+        if (payload.has_hires_tiles !== undefined) initTileLayer(payload.has_hires_tiles);
+        const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
+        const currentRouteChanged = newData.current_route_id !== data.current_route_id;
+        const poisChanged = JSON.stringify(newData.pois) !== JSON.stringify(data.pois);
+        const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
+        data = newData;
+        currentPos = newPos;
+        if (routesChanged || currentRouteChanged) renderRoutes();
+        if (poisChanged) renderPois();
+        if (posChanged) renderLiveMarker();
+        lastPoiCount = (data.pois || []).length;
+        connected = true;
         statusEl.textContent = currentPos
           ? `Verbunden — X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`
           : 'Verbunden — Keine Position';
-        connected = true;
-      } else {
-        statusEl.textContent = currentPos
-          ? `X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`
-          : 'Keine Position';
+        if (followPlayer && currentPos) centerOnCurrentPos();
+        break;
       }
-
-      if (followPlayer && currentPos) centerOnCurrentPos();
-    } catch (err) {
-      connected = false;
-      statusEl.textContent = 'Verbindung zur App verloren, versuche erneut…';
+      case 'coord-update': {
+        const newPos = payload.data;
+        const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
+        currentPos = newPos;
+        if (posChanged) renderLiveMarker();
+        statusEl.textContent = `X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`;
+        if (followPlayer && currentPos) centerOnCurrentPos();
+        break;
+      }
+      case 'data-updated': {
+        const newData = payload.data || { routes: [], current_route_id: null, pois: [] };
+        const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
+        const currentRouteChanged = newData.current_route_id !== data.current_route_id;
+        const poisChanged = JSON.stringify(newData.pois) !== JSON.stringify(data.pois);
+        data = newData;
+        if (routesChanged || currentRouteChanged) renderRoutes();
+        if (poisChanged) renderPois();
+        break;
+      }
+      case 'poi-creating': {
+        showToast('📍 POI wird erstellt...');
+        break;
+      }
+      case 'poi-created': {
+        showToast('📍 POI erstellt: ' + payload.label);
+        break;
+      }
+      case 'chat-paused': {
+        if (payload.value) {
+          showToast('⏸ Chat offen – Tracking pausiert');
+        }
+        break;
+      }
+      case 'scum-status': {
+        if (!payload.value) {
+          statusEl.textContent = 'SCUM nicht gestartet';
+        }
+        break;
+      }
+      case 'bounds-updated': {
+        if (payload.bounds) applyBounds(payload.bounds);
+        if (currentPos) renderLiveMarker();
+        renderRoutes();
+        renderPois();
+        break;
+      }
+      case 'hires-tiles-installed': {
+        if (tileLayer) {
+          map.removeLayer(tileLayer);
+          tileLayer = null;
+        }
+        initTileLayer(true);
+        showToast('🗺️ Hi-Res Tiles installiert!');
+        break;
+      }
+      case 'tracking-state': {
+        if (payload.recording) {
+          showToast('🔴 Aufnahme gestartet');
+        }
+        break;
+      }
+      case 'tracking-interval': {
+        break;
+      }
     }
   }
 
-  fetchData();
-  setInterval(fetchData, 2000);
+  let pingInterval = null;
+
+  function connectWs() {
+    const wsPort = window.__WS_PORT__ || '4489';
+    const host = window.location.hostname || 'localhost';
+    const wsUrl = 'ws://' + host + ':' + wsPort + '/ws';
+    let ws;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (e) {
+      statusEl.textContent = 'Verbindung fehlgeschlagen, versuche erneut…';
+      setTimeout(connectWs, 2000);
+      return;
+    }
+
+    ws.onopen = () => {
+      connected = true;
+      statusEl.textContent = 'Verbunden — login...';
+      ws.send(JSON.stringify({ type: 'login', client: 'overlay' }));
+      // Send ping every 25 seconds to keep connection alive
+      if (pingInterval) clearInterval(pingInterval);
+      pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, 25000);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'pong') return; // ignore pong
+        handleWsMessage(event.data);
+      } catch (e) {}
+    };
+
+    ws.onclose = () => {
+      connected = false;
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+      statusEl.textContent = 'Verbindung verloren, versuche erneut…';
+      setTimeout(connectWs, 2000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+  }
+
+  connectWs();
 
 })();

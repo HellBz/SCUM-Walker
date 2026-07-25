@@ -17,11 +17,13 @@
     <div id="status">Bereit</div>
     <div id="scumStatus" class="scum-status running">SCUM: läuft</div>
     <div id="chatPausedStatus" class="chat-paused-status" style="display:none">⏸ Chat offen – Tracking pausiert</div>
+    <div id="toast" class="toast"></div>
 
     <div class="section">
       <h3>Live-Map</h3>
       <div class="button-row">
         <button id="toggleLiveTracking">Live-Tracking starten</button>
+        <input id="trackingInterval" type="number" min="1" max="60" value="10" title="Update-Intervall in Sekunden" style="width:50px">s
       </div>
       <div class="button-row">
         <button id="openOverlay" title="Overlay öffnen">Overlay öffnen</button>

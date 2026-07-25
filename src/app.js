@@ -185,7 +185,7 @@ if (mapFollowBtn) {
     mapFollowBtn.style.background = followEnabled ? '#00ffcc33' : '';
     if (followEnabled && currentCoord) {
       const ll = gameToLatLng(currentCoord.x, currentCoord.y);
-      map.setView(ll, map.getZoom());
+      map.panTo(ll, { animate: true, duration: 0.5 });
     }
   });
 }
@@ -193,14 +193,14 @@ if (mapFollowBtn) {
 document.getElementById('mapCenterBtn').addEventListener('click', () => {
   if (currentCoord) {
     const ll = gameToLatLng(currentCoord.x, currentCoord.y);
-    map.panTo(ll);
+    map.panTo(ll, { animate: true, duration: 0.5 });
   }
 });
 
 document.getElementById('mapFitBtn').addEventListener('click', () => {
   followEnabled = false;
   if (mapFollowBtn) mapFollowBtn.style.background = '';
-  map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
+  map.flyToBounds([[0, 0], [MAP_UNITS, MAP_UNITS]], { duration: 0.8 });
 });
 
 // Leaflet layers for routes, POIs, live marker
@@ -274,6 +274,32 @@ function renderPois() {
       fillOpacity: 1,
     }).addTo(map);
     if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
+
+    if (poi.image_path) {
+      let hoverPopupBound = false;
+      marker.on('mouseover', async () => {
+        if (!hoverPopupBound) {
+          try {
+            const base64 = await invoke('get_poi_image_base64', { id: poi.id });
+            marker.bindPopup(`<img src="data:image/png;base64,${base64}" style="max-width:200px;max-height:150px;border-radius:4px">`, { maxWidth: 250, closeButton: false, autoPan: false });
+            hoverPopupBound = true;
+          } catch (err) {}
+        }
+        marker.openPopup();
+      });
+      marker.on('click', async () => {
+        marker.closePopup();
+        try {
+          const base64 = await invoke('get_poi_image_base64', { id: poi.id });
+          imageDialogImg.src = 'data:image/png;base64,' + base64;
+          imageDialogTitle.textContent = 'Bild: ' + poi.label;
+          imageDialog.classList.add('open');
+        } catch (err) {
+          statusEl.textContent = 'Fehler beim Laden des Bildes: ' + err;
+        }
+      });
+    }
+
     poiMarkers.push(marker);
   });
 }
@@ -437,7 +463,8 @@ function renderPoiList() {
     div.innerHTML = `<span><span class="poi-color" style="background:${poi.color}"></span>${escapeHtml(poi.label)}</span>
                      <span class="poi-actions">
                        <button class="poi-edit" data-id="${poi.id}" title="POI bearbeiten">✎</button>
-                       <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Bild einfügen'}">🖼</button>
+                       <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Screenshot aus SCUM'}">${hasImage ? '👁' : '📸'}</button>
+                       <button class="poi-upload-btn" data-id="${poi.id}" title="Bild hochladen">�</button>
                        <button class="poi-delete" data-id="${poi.id}" title="POI löschen">🗑</button>
                      </span>`;
     poiListEl.appendChild(div);
@@ -483,6 +510,33 @@ function renderPoiList() {
           statusEl.textContent = 'Kein Bild in Zwischenablage: ' + err;
         }
       }
+    });
+  });
+
+  poiListEl.querySelectorAll('.poi-upload-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/png,image/jpeg';
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const dataUrl = reader.result;
+          const base64 = dataUrl.split(',')[1];
+          try {
+            data = await invoke('upload_poi_image', { id, base64Data: base64 });
+            updateUI();
+            statusEl.textContent = 'Bild hochgeladen.';
+          } catch (err) {
+            statusEl.textContent = 'Fehler beim Upload: ' + err;
+          }
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
     });
   });
 
@@ -611,6 +665,25 @@ document.getElementById('poiSave').addEventListener('click', async () => {
 // Live tracking toggle
 let isLiveTracking = false;
 const liveTrackingBtn = document.getElementById('toggleLiveTracking');
+const trackingIntervalInput = document.getElementById('trackingInterval');
+
+async function syncTrackingInterval() {
+  try {
+    const interval = await invoke('get_tracking_interval');
+    if (trackingIntervalInput) trackingIntervalInput.value = interval;
+  } catch (err) {}
+}
+syncTrackingInterval();
+
+if (trackingIntervalInput) {
+  trackingIntervalInput.addEventListener('change', async () => {
+    let val = parseInt(trackingIntervalInput.value);
+    if (isNaN(val) || val < 1) val = 1;
+    if (val > 60) val = 60;
+    trackingIntervalInput.value = val;
+    await invoke('set_tracking_interval', { seconds: val });
+  });
+}
 
 async function syncLiveTrackingState() {
   try {
@@ -762,6 +835,16 @@ function updateScumStatus() {
   }
 }
 
+let toastTimer = null;
+function showToast(msg) {
+  const toastEl = document.getElementById('toast');
+  if (!toastEl) return;
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
+}
+
 // Live updates
 if (window.__TAURI__.event) {
   window.__TAURI__.event.listen('scum-status', (event) => {
@@ -779,6 +862,18 @@ if (window.__TAURI__.event) {
     }
   });
 
+  window.__TAURI__.event.listen('data-updated', (event) => {
+    data = event.payload;
+    if (!data.routes) data.routes = [];
+    if (!data.pois) data.pois = [];
+    updateUI();
+  });
+
+  window.__TAURI__.event.listen('hotkey-poi-created', (event) => {
+    statusEl.textContent = 'POI per F9 erstellt: ' + event.payload;
+    showToast('📍 POI erstellt + Screenshot gespeichert!');
+  });
+
   window.__TAURI__.event.listen('coord-update', (event) => {
     currentCoord = event.payload;
     const route = getCurrentRoute();
@@ -789,7 +884,7 @@ if (window.__TAURI__.event) {
     renderMap();
     if (followEnabled) {
       const ll = gameToLatLng(currentCoord.x, currentCoord.y);
-      map.panTo(ll);
+      map.panTo(ll, { animate: true, duration: 0.8 });
     }
   });
 }
