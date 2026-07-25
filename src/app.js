@@ -772,6 +772,13 @@ if (window.__TAURI__.event) {
     }
   });
 
+  window.__TAURI__.event.listen('chat-paused', (event) => {
+    const chatPausedEl = document.getElementById('chatPausedStatus');
+    if (chatPausedEl) {
+      chatPausedEl.style.display = event.payload ? 'block' : 'none';
+    }
+  });
+
   window.__TAURI__.event.listen('coord-update', (event) => {
     currentCoord = event.payload;
     const route = getCurrentRoute();

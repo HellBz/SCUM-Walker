@@ -19,7 +19,7 @@ use std::ffi::OsStr;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
 #[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
@@ -104,6 +104,7 @@ pub(crate) struct AppState {
     recording: Mutex<bool>,
     live_tracking: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
+    chat_paused: Mutex<bool>,
 }
 
 impl AppState {
@@ -225,29 +226,77 @@ fn focus_scum_window() {}
 const VK_CONTROL: u16 = 0x11;
 #[cfg(windows)]
 const VK_C: u16 = 0x43;
+#[cfg(windows)]
+const VK_T: u16 = 0x54;
+#[cfg(windows)]
+const VK_RETURN: u16 = 0x0D;
+#[cfg(windows)]
+const VK_ESCAPE: u16 = 0x1B;
 
 #[cfg(windows)]
-fn post_key(hwnd: HWND, vk: u16, msg: u32) {
-    unsafe {
-        let _ = PostMessageW(hwnd, msg, windows::Win32::Foundation::WPARAM(vk as usize), windows::Win32::Foundation::LPARAM(0));
-    }
+fn is_key_pressed(vk: u16) -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    unsafe { (GetAsyncKeyState(vk as i32) as u16) & 0x8000 != 0 }
 }
 
 #[cfg(windows)]
-fn post_ctrl_c(hwnd: HWND) {
-    post_key(hwnd, VK_CONTROL, WM_KEYDOWN);
-    std::thread::sleep(Duration::from_millis(20));
-    post_key(hwnd, VK_C, WM_KEYDOWN);
-    std::thread::sleep(Duration::from_millis(50));
-    post_key(hwnd, VK_C, WM_KEYUP);
-    std::thread::sleep(Duration::from_millis(20));
-    post_key(hwnd, VK_CONTROL, WM_KEYUP);
+fn start_chat_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        loop {
+            if is_key_pressed(VK_T) {
+                *state.chat_paused.lock().unwrap() = true;
+                let _ = app_handle.emit("chat-paused", true);
+                eprintln!("[chat-watcher] Chat geöffnet (T) - pausiere Tracking");
+
+                // Warte auf Enter oder ESC
+                loop {
+                    if is_key_pressed(VK_RETURN) {
+                        // Erster Enter erkannt. Warte 300ms, dann prüfe
+                        // ob innerhalb 2 Sekunden ein weiterer Enter/ESC kommt.
+                        thread::sleep(Duration::from_millis(300));
+                        let mut closed = true;
+                        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+                        while std::time::Instant::now() < deadline {
+                            if is_key_pressed(VK_RETURN) || is_key_pressed(VK_ESCAPE) {
+                                closed = true;
+                                thread::sleep(Duration::from_millis(100));
+                                break;
+                            }
+                            thread::sleep(Duration::from_millis(50));
+                        }
+                        if closed {
+                            break;
+                        }
+                    }
+                    if is_key_pressed(VK_ESCAPE) {
+                        thread::sleep(Duration::from_millis(100));
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+
+                *state.chat_paused.lock().unwrap() = false;
+                let _ = app_handle.emit("chat-paused", false);
+                eprintln!("[chat-watcher] Chat geschlossen - resume");
+                thread::sleep(Duration::from_millis(300));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
 }
 
 #[cfg(windows)]
 fn send_ctrl_c_to_scum() -> Result<(), String> {
     let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden")?;
-    post_ctrl_c(hwnd);
+    unsafe {
+        let _ = PostMessageW(hwnd, WM_KEYDOWN, WPARAM(VK_CONTROL as usize), LPARAM(0));
+        std::thread::sleep(Duration::from_millis(20));
+        let _ = PostMessageW(hwnd, WM_KEYDOWN, WPARAM(VK_C as usize), LPARAM(0));
+        std::thread::sleep(Duration::from_millis(50));
+        let _ = PostMessageW(hwnd, WM_KEYUP, WPARAM(VK_C as usize), LPARAM(0));
+        std::thread::sleep(Duration::from_millis(20));
+        let _ = PostMessageW(hwnd, WM_KEYUP, WPARAM(VK_CONTROL as usize), LPARAM(0));
+    }
     Ok(())
 }
 
@@ -377,6 +426,13 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 if !scum_running {
                     thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
                     continue;
+                }
+                #[cfg(windows)]
+                {
+                    if *state.chat_paused.lock().unwrap() {
+                        thread::sleep(Duration::from_millis(200));
+                        continue;
+                    }
                 }
                 if send_ctrl_c_to_scum().is_err() {
                     thread::sleep(Duration::from_secs(INTERVAL_SECONDS));
@@ -911,8 +967,11 @@ fn main() {
                 recording: Mutex::new(false),
                 live_tracking: Mutex::new(false),
                 current_position: Mutex::new(None),
+                chat_paused: Mutex::new(false),
             });
 
+            #[cfg(windows)]
+            start_chat_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
             let tiles_dir = get_tiles_dir(&app.handle());
             if let Err(e) = std::fs::create_dir_all(&tiles_dir) {

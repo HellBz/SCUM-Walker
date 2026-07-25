@@ -68,6 +68,17 @@ body {
   border: 1px solid #ff444455;
 }
 
+.chat-paused-status {
+  font-size: 12px;
+  margin-bottom: 16px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: center;
+  background: #3a2e0a;
+  color: #ffaa33;
+  border: 1px solid #ffaa3355;
+}
+
 .section {
   margin-bottom: 20px;
   padding-bottom: 12px;
