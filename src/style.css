@@ -15,6 +15,34 @@ body {
   overflow: hidden;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #444 #1a1a1a;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+  border: 1px solid #1a1a1a;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #00ffcc;
+}
+
+*::-webkit-scrollbar-corner {
+  background: #1a1a1a;
+}
+
 #sidebar {
   width: 300px;
   background: #1a1a1a;
