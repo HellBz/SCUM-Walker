@@ -14,6 +14,13 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
   }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s || '';
+    return div.innerHTML;
+  }
+
   const isTauri = typeof window.__TAURI__ !== 'undefined';
   document.body.classList.add('auto-hide-controls');
   if (isTauri) document.body.classList.add('tauri-mode');
@@ -267,6 +274,10 @@
   let liveMarker = null;
   let liveArrow = null;
   let livePulse = null;
+  let connectionLines = [];
+  let connectionLabels = [];
+  let connectedPoiIds = new Set();
+  let connectionUpdatePending = false;
 
   function clearRoutes() {
     Object.values(routeLayers).forEach(l => map.removeLayer(l));
@@ -282,6 +293,218 @@
     if (liveMarker) { map.removeLayer(liveMarker); liveMarker = null; }
     if (liveArrow) { map.removeLayer(liveArrow); liveArrow = null; }
     if (livePulse) { map.removeLayer(livePulse); livePulse = null; }
+  }
+
+  let connectionLayersByPoi = {};
+  let lineAnimFrame = null;
+
+  function lerpLatLng(a, b, t) {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  }
+  function lerpSeg(a, b, t) {
+    return a.map((pt, i) => lerpLatLng(pt, b[i], t));
+  }
+  function captureLineState() {
+    const state = {};
+    Object.entries(connectionLayersByPoi).forEach(([id, entry]) => {
+      state[id] = {
+        seg1: entry.seg1 ? entry.seg1.getLatLngs().map(l => [l.lat, l.lng]) : null,
+        seg2: entry.seg2 ? entry.seg2.getLatLngs().map(l => [l.lat, l.lng]) : null,
+        label: entry.label ? [entry.label.getLatLng().lat, entry.label.getLatLng().lng] : null,
+      };
+    });
+    return state;
+  }
+
+  function clearConnectionLine() {
+    Object.values(connectionLayersByPoi).forEach(entry => {
+      if (entry.seg1) map.removeLayer(entry.seg1);
+      if (entry.seg2) map.removeLayer(entry.seg2);
+      if (entry.label) map.removeLayer(entry.label);
+    });
+    connectionLayersByPoi = {};
+    connectionLines = [];
+    connectionLabels = [];
+  }
+
+  function renderConnectionLine() {
+    if (!currentPos) {
+      clearConnectionLine();
+      return;
+    }
+    const prevState = captureLineState();
+    const activeIds = new Set();
+    const targetState = {};
+
+    connectedPoiIds.forEach(id => {
+      const poi = data.pois.find(p => p.id === id);
+      if (!poi) return;
+      activeIds.add(id);
+      const from = gameToLatLng(currentPos.x, currentPos.y);
+      const to = gameToLatLng(poi.x, poi.y);
+      const dx = poi.x - currentPos.x;
+      const dy = poi.y - currentPos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const color = poi.color || '#888';
+
+      const pFrom = map.latLngToContainerPoint(L.latLng(from[0], from[1]));
+      const pTo = map.latLngToContainerPoint(L.latLng(to[0], to[1]));
+      const angleRad = Math.atan2(pTo.y - pFrom.y, pTo.x - pFrom.x);
+      const angle = angleRad * 180 / Math.PI;
+      let textAngle = angle;
+      if (textAngle > 90) textAngle -= 180;
+      if (textAngle < -90) textAngle += 180;
+
+      let seg1LatLngs, seg2LatLngs, labelLatLng, hasLabel = false;
+
+      if (dist > 200) {
+        const mapSize = map.getSize();
+        const inset = 50;
+        const dirX = Math.cos(angleRad);
+        const dirY = Math.sin(angleRad);
+        let tEdge = Infinity;
+        if (dirX > 0.001) tEdge = Math.min(tEdge, (mapSize.x - inset - pFrom.x) / dirX);
+        if (dirX < -0.001) tEdge = Math.min(tEdge, (inset - pFrom.x) / dirX);
+        if (dirY > 0.001) tEdge = Math.min(tEdge, (mapSize.y - inset - pFrom.y) / dirY);
+        if (dirY < -0.001) tEdge = Math.min(tEdge, (inset - pFrom.y) / dirY);
+        const distToPoi = Math.sqrt((pTo.x - pFrom.x) ** 2 + (pTo.y - pFrom.y) ** 2);
+        const labelDist = Math.min(tEdge, distToPoi - 30);
+        if (labelDist >= 40) {
+          hasLabel = true;
+          const labelPxX = pFrom.x + dirX * labelDist;
+          const labelPxY = pFrom.y + dirY * labelDist;
+          labelLatLng = map.containerPointToLatLng(L.point(labelPxX, labelPxY));
+          const gapPx = 30;
+          const gap1PxX = pFrom.x + dirX * (labelDist - gapPx);
+          const gap1PxY = pFrom.y + dirY * (labelDist - gapPx);
+          const gap1LatLng = map.containerPointToLatLng(L.point(gap1PxX, gap1PxY));
+          const gap2PxX = pFrom.x + dirX * (labelDist + gapPx);
+          const gap2PxY = pFrom.y + dirY * (labelDist + gapPx);
+          const gap2LatLng = map.containerPointToLatLng(L.point(gap2PxX, gap2PxY));
+          seg1LatLngs = [from, [gap1LatLng.lat, gap1LatLng.lng]];
+          seg2LatLngs = [[gap2LatLng.lat, gap2LatLng.lng], to];
+        } else {
+          seg1LatLngs = [from, to];
+          seg2LatLngs = null;
+        }
+      } else {
+        seg1LatLngs = [from, to];
+        seg2LatLngs = null;
+      }
+
+      targetState[id] = {
+        seg1: seg1LatLngs ? seg1LatLngs.map(p => [p[0], p[1]]) : null,
+        seg2: seg2LatLngs ? seg2LatLngs.map(p => [p[0], p[1]]) : null,
+        label: hasLabel ? [labelLatLng.lat, labelLatLng.lng] : null,
+        textAngle, color, poiLabel: poi.label,
+      };
+
+      let entry = connectionLayersByPoi[id];
+      if (!entry) {
+        entry = { seg1: null, seg2: null, label: null, color };
+        connectionLayersByPoi[id] = entry;
+      }
+
+      const lineOpts = {
+        color, weight: 2, opacity: 0.7,
+        dashArray: '8,4,2,4', dashOffset: 0,
+        className: 'poi-connection-line',
+      };
+
+      if (!entry.seg1) {
+        entry.seg1 = L.polyline(seg1LatLngs, lineOpts).addTo(map);
+        connectionLines.push(entry.seg1);
+      }
+
+      if (seg2LatLngs && !entry.seg2) {
+        entry.seg2 = L.polyline(seg2LatLngs, lineOpts).addTo(map);
+        connectionLines.push(entry.seg2);
+      } else if (!seg2LatLngs && entry.seg2) {
+        map.removeLayer(entry.seg2);
+        entry.seg2 = null;
+      }
+
+      if (hasLabel && !entry.label) {
+        entry.label = L.marker([labelLatLng.lat, labelLatLng.lng], {
+          icon: L.divIcon({
+            className: 'poi-connection-label',
+            html: `<span style="color:${color};transform:rotate(${textAngle}deg)">${escapeHtml(poi.label)}</span>`,
+            iconSize: [120, 20],
+            iconAnchor: [60, 10],
+          }),
+          interactive: false,
+        }).addTo(map);
+        connectionLabels.push(entry.label);
+      } else if (!hasLabel && entry.label) {
+        map.removeLayer(entry.label);
+        entry.label = null;
+      }
+    });
+
+    Object.keys(connectionLayersByPoi).forEach(id => {
+      if (!activeIds.has(id)) {
+        const entry = connectionLayersByPoi[id];
+        if (entry.seg1) map.removeLayer(entry.seg1);
+        if (entry.seg2) map.removeLayer(entry.seg2);
+        if (entry.label) map.removeLayer(entry.label);
+        delete connectionLayersByPoi[id];
+        delete prevState[id];
+      }
+    });
+
+    if (lineAnimFrame) cancelAnimationFrame(lineAnimFrame);
+    const animStart = performance.now();
+    const duration = 800;
+
+    function animateLines(now) {
+      const elapsed = now - animStart;
+      const t = Math.min(1, elapsed / duration);
+      const eased = t < 0.5 ? 2 * t * t : 1 - (1 - t) * (1 - t);
+
+      Object.entries(targetState).forEach(([id, target]) => {
+        const entry = connectionLayersByPoi[id];
+        if (!entry) return;
+        const from = prevState[id];
+
+        if (entry.seg1 && target.seg1) {
+          if (from && from.seg1) {
+            entry.seg1.setLatLngs(lerpSeg(from.seg1, target.seg1, eased));
+          } else {
+            entry.seg1.setLatLngs(target.seg1);
+          }
+        }
+        if (entry.seg2 && target.seg2) {
+          if (from && from.seg2) {
+            entry.seg2.setLatLngs(lerpSeg(from.seg2, target.seg2, eased));
+          } else {
+            entry.seg2.setLatLngs(target.seg2);
+          }
+        }
+        if (entry.label && target.label) {
+          if (from && from.label) {
+            entry.label.setLatLng(lerpLatLng(from.label, target.label, eased));
+          } else {
+            entry.label.setLatLng(target.label);
+          }
+          const el = entry.label.getElement();
+          if (el) {
+            const span = el.querySelector('span');
+            if (span) {
+              span.style.color = target.color;
+              span.style.transform = `rotate(${target.textAngle}deg)`;
+              span.textContent = target.poiLabel;
+            }
+          }
+        }
+      });
+
+      if (t < 1) {
+        lineAnimFrame = requestAnimationFrame(animateLines);
+      } else {
+        lineAnimFrame = null;
+      }
+    }
+    lineAnimFrame = requestAnimationFrame(animateLines);
   }
 
   function renderRoutes() {
@@ -348,22 +571,40 @@
     clearLiveMarker();
     if (!currentPos) return;
     const ll = gameToLatLng(currentPos.x, currentPos.y);
+    updateLiveMarker(ll);
+  }
 
-    let html = '<div class="live-marker"><div class="live-marker-dot"></div>';
-    if (typeof currentPos.yaw === 'number') {
-      html += `<div class="live-marker-arrow" style="transform: translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg) translateY(-20px)"></div>`;
+  function updateLiveMarker(ll) {
+    if (!currentPos) return;
+    if (!ll) ll = gameToLatLng(currentPos.x, currentPos.y);
+    if (liveMarker) {
+      liveMarker.setLatLng(ll);
+      const el = liveMarker.getElement();
+      if (el) {
+        const stem = el.querySelector('.live-marker-stem');
+        const arrow = el.querySelector('.live-marker-arrow');
+        if (typeof currentPos.yaw === 'number') {
+          if (stem) stem.style.transform = `translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg)`;
+          if (arrow) arrow.style.transform = `translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg) translateY(-12px)`;
+        }
+      }
+    } else {
+      let html = '<div class="live-marker"><div class="live-marker-dot"></div>';
+      if (typeof currentPos.yaw === 'number') {
+        html += `<div class="live-marker-stem" style="transform: translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg)"></div>`;
+        html += `<div class="live-marker-arrow" style="transform: translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg) translateY(-12px)"></div>`;
+      }
+      html += '</div>';
+      liveMarker = L.marker(ll, {
+        icon: L.divIcon({
+          className: '',
+          html: html,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+        }),
+        interactive: false,
+      }).addTo(map);
     }
-    html += '</div>';
-
-    liveMarker = L.marker(ll, {
-      icon: L.divIcon({
-        className: '',
-        html: html,
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-      }),
-      interactive: false,
-    }).addTo(map);
   }
 
   function centerOnCurrentPos() {
@@ -396,6 +637,10 @@
         if (routesChanged || currentRouteChanged) renderRoutes();
         if (poisChanged) renderPois();
         if (posChanged) renderLiveMarker();
+        if (payload.poi_connections) {
+          connectedPoiIds = new Set(payload.poi_connections);
+          if (connectedPoiIds.size > 0) renderConnectionLine();
+        }
         lastPoiCount = (data.pois || []).length;
         connected = true;
         statusEl.textContent = currentPos
@@ -408,7 +653,19 @@
         const newPos = payload.data;
         const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
         currentPos = newPos;
-        if (posChanged) renderLiveMarker();
+        if (posChanged) {
+          const ll = gameToLatLng(currentPos.x, currentPos.y);
+          updateLiveMarker(ll);
+          if (connectedPoiIds.size > 0) {
+            if (!connectionUpdatePending) {
+              connectionUpdatePending = true;
+              requestAnimationFrame(() => {
+                connectionUpdatePending = false;
+                renderConnectionLine();
+              });
+            }
+          }
+        }
         statusEl.textContent = `X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`;
         if (followPlayer && currentPos) centerOnCurrentPos();
         break;
@@ -421,6 +678,7 @@
         data = newData;
         if (routesChanged || currentRouteChanged) renderRoutes();
         if (poisChanged) renderPois();
+        if (poisChanged && connectedPoiIds.size > 0) renderConnectionLine();
         break;
       }
       case 'poi-creating': {
@@ -466,6 +724,21 @@
         break;
       }
       case 'tracking-interval': {
+        break;
+      }
+      case 'poi-connect': {
+        connectedPoiIds.add(payload.poiId);
+        renderConnectionLine();
+        break;
+      }
+      case 'poi-disconnect': {
+        connectedPoiIds.delete(payload.poiId);
+        renderConnectionLine();
+        break;
+      }
+      case 'poi-connections': {
+        connectedPoiIds = new Set(payload.ids || []);
+        renderConnectionLine();
         break;
       }
     }

@@ -46,6 +46,9 @@ html, body {
   width: 40px;
   height: 40px;
 }
+.leaflet-marker-icon:has(.live-marker) {
+  transition: transform 0.8s linear;
+}
 .live-marker-dot {
   position: absolute;
   top: 50%;
@@ -67,6 +70,16 @@ html, body {
   border-right: 4px solid transparent;
   border-bottom: 9px solid #00ffcc;
   transform-origin: 50% 50%;
+}
+.live-marker-stem {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 5px;
+  background: #00ffcc;
+  transform-origin: 50% 100%;
+  margin-top: -7px;
 }
 
 #controls {
@@ -216,4 +229,23 @@ body:not(.tauri-mode) #dragHandle {
 .toast.show {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
+}
+
+@keyframes dash-flow {
+  to { stroke-dashoffset: -18; }
+}
+.poi-connection-line {
+  animation: dash-flow 1s linear infinite;
+}
+.poi-connection-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-shadow: 0 0 4px #000, 0 0 4px #000, 0 0 4px #000;
+  pointer-events: none;
+  white-space: nowrap;
+  text-align: center;
+}
+.poi-connection-label span {
+  display: inline-block;
+  transform-origin: center center;
 }

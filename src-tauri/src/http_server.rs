@@ -176,6 +176,7 @@ pub fn start_http_server(state: Arc<AppState>, tiles_dir: String) {
                                                             "current_position": state.current_position(),
                                                             "bounds": bounds,
                                                             "has_hires_tiles": has_hires,
+                                                            "poi_connections": state.poi_connections.lock().unwrap().clone(),
                                                         }).to_string();
                                                         let _ = ws.send(tungstenite::Message::Text(login_resp));
                                                         eprintln!("[ws_server] Client login erfolgreich");

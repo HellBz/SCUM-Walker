@@ -12,11 +12,12 @@
   <div id="sidebar">
     <div class="sidebar-title">
       <span class="brand">SCUM Walker</span>
+      <span id="versionBadge" class="version-badge">v0.4.0</span>
     </div>
 
     <div id="status">Bereit</div>
     <div id="scumStatus" class="scum-status running">SCUM: läuft</div>
-    <div id="chatPausedStatus" class="chat-paused-status" style="display:none">⏸ Chat offen – Tracking pausiert</div>
+    <div id="chatPausedStatus" class="chat-paused-status" style="display:none">â¸ Chat offen â€“ Tracking pausiert</div>
     <div id="toast" class="toast"></div>
 
     <div class="section">
@@ -30,19 +31,19 @@
       </div>
       <div style="height:6px"></div>
       <div class="button-row overlay-actions">
-        <button id="lockOverlay" title="Overlay sperren / Klick-durch">🔒</button>
-        <button id="closeOverlay" title="Overlay schließen">✕</button>
-        <button id="resetOverlayPosition" title="Overlay-Position zurücksetzen">↺</button>
+        <button id="lockOverlay" class="unlocked" title="Overlay sperren / Klick-durch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg></button>
+        <button id="closeOverlay" title="Overlay schließen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <button id="resetOverlayPosition" title="Overlay-Position zurücksetzen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
       </div>
       <div style="height:6px"></div>
       <label class="url-label">URL für OBS/Browser:</label>
       <div class="url-row">
         <input id="livemapUrl" type="text" value="" readonly>
-        <button id="copyLivemapUrl" title="URL kopieren">⎘</button>
+        <button id="copyLivemapUrl" title="URL kopieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       </div>
       <div style="height:6px"></div>
       <div class="button-row">
-        <button id="downloadHiresBtn" title="Hochauflösende Karten-Tiles herunterladen">⬇ Hi-Res Tiles</button>
+        <button id="downloadHiresBtn" title="Hochauflösende Karten-Tiles herunterladen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Hi-Res Tiles</button>
       </div>
       <div id="hiresStatus" style="font-size:11px;color:#888;margin-top:4px"></div>
     </div>
@@ -50,7 +51,7 @@
     <div class="section">
       <div class="section-header">
         <h3>Routen</h3>
-        <button id="addRouteBtn" class="icon-btn" title="Neue Route">＋</button>
+        <button id="addRouteBtn" class="icon-btn" title="Neue Route"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
       </div>
       <div id="routeList"></div>
       <div class="export-row">
@@ -70,12 +71,12 @@
   <div id="mapShell">
     <div id="map"></div>
     <div id="mapControls">
-      <button id="mapZoomOut" title="Herauszoomen">−</button>
+      <button id="mapZoomOut" title="Herauszoomen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
       <span id="mapZoomLabel">100%</span>
       <button id="mapZoomIn" title="Hineinzoomen">+</button>
-      <button id="mapFollowBtn" title="Aktueller Position folgen">◎</button>
-      <button id="mapCenterBtn" title="Auf aktuelle Position zentrieren">⛯</button>
-      <button id="mapFitBtn" title="Gesamte Karte anzeigen">⛶</button>
+      <button id="mapFollowBtn" title="Aktueller Position folgen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" stroke-dasharray="2,3"/></svg></button>
+      <button id="mapCenterBtn" title="Auf aktuelle Position zentrieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
+      <button id="mapFitBtn" title="Gesamte Karte anzeigen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 4 20 10 20"/><polyline points="20 10 20 4 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
     </div>
   </div>
 
@@ -114,7 +115,7 @@
       <h3 id="imageDialogTitle">POI Bild</h3>
       <img id="imageDialogImg" alt="POI Bild">
       <div class="dialog-actions">
-        <button id="imageDialogClose">Schließen</button>
+        <button id="imageDialogClose"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
   </div>

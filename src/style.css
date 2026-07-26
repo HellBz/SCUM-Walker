@@ -16,7 +16,7 @@ body {
 }
 
 #sidebar {
-  width: 260px;
+  width: 300px;
   background: #1a1a1a;
   border-right: 1px solid #333;
   padding: 16px;
@@ -37,6 +37,13 @@ body {
   color: #00ffcc;
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+.version-badge {
+  display: block;
+  font-size: 10px;
+  color: #555;
+  margin-top: 2px;
+  letter-spacing: 1px;
 }
 
 #status {
@@ -241,6 +248,17 @@ button:hover { background: #3a3a3a; }
   flex: 1;
 }
 
+#lockOverlay.locked {
+  background: #ff444422;
+  border-color: #ff4444;
+  color: #ff4444;
+}
+#lockOverlay.unlocked {
+  background: #44ff4422;
+  border-color: #44ff44;
+  color: #44ff44;
+}
+
 #map {
   position: absolute;
   top: 0;
@@ -294,6 +312,13 @@ button:hover { background: #3a3a3a; }
   width: 40px;
   height: 40px;
 }
+.leaflet-marker-icon:has(.live-marker) {
+  transition: transform var(--marker-transition, 0.8s linear);
+}
+.poi-connection-line {
+  animation: dash-flow 1s linear infinite;
+  transition: d 0.8s linear;
+}
 .live-marker-dot {
   position: absolute;
   top: 50%;
@@ -315,6 +340,16 @@ button:hover { background: #3a3a3a; }
   border-right: 4px solid transparent;
   border-bottom: 9px solid #00ffcc;
   transform-origin: 50% 50%;
+}
+.live-marker-stem {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 5px;
+  background: #00ffcc;
+  transform-origin: 50% 100%;
+  margin-top: -7px;
 }
 
 .dialog {
@@ -495,7 +530,9 @@ button:hover { background: #3a3a3a; }
 
 .route-icon:hover { border-color: #00ffcc; color: #00ffcc; }
 .route-icon.active { color: #00ffcc; border-color: #00ffcc; background: #1a3a33; }
-.route-icon.hidden { color: #ff4444; border-color: #ff4444; }
+.route-icon.hidden { color: #ffcc00; border-color: #ffcc00; }
+.route-icon[data-action="delete"] { color: #ff4444; }
+.route-icon[data-action="delete"]:hover { border-color: #ff4444; background: #ff444422; }
 .route-icon.recording { color: #ff4444; border-color: #ff4444; animation: pulse 1.2s infinite; }
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 #ff4444aa; }
@@ -527,6 +564,10 @@ button:hover { background: #3a3a3a; }
 
 .poi-edit,
 .poi-image-btn,
+.poi-upload-btn,
+.poi-center-btn,
+.poi-connect-btn,
+.poi-more-btn,
 .poi-delete {
   background: transparent;
   border: 1px solid #555;
@@ -542,10 +583,84 @@ button:hover { background: #3a3a3a; }
   padding: 0;
 }
 
+.poi-more-btn:hover {
+  border-color: #00ffcc;
+  color: #00ffcc;
+}
+
+.poi-dropdown {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  z-index: 100;
+  min-width: 140px;
+  padding: 4px;
+  flex-direction: column;
+  gap: 2px;
+}
+.poi-dropdown.open {
+  display: flex;
+}
+.poi-dropdown button {
+  background: transparent;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 3px;
+  width: 100%;
+  text-align: left;
+}
+.poi-dropdown button:hover {
+  background: #333;
+  color: #fff;
+}
+.poi-dropdown .poi-delete {
+  color: #ff4444;
+  width: 100%;
+  height: auto;
+  border: none;
+}
+.poi-dropdown .poi-delete:hover {
+  background: #ff444422;
+  color: #ff4444;
+}
+
+.poi-actions {
+  position: relative;
+}
+
 .poi-edit:hover,
-.poi-image-btn:hover { border-color: #00ffcc; color: #00ffcc; }
-.poi-delete { color: #ff4444; }
-.poi-delete:hover { border-color: #ff4444; background: #ff444422; }
+.poi-image-btn:hover,
+.poi-upload-btn:hover,
+.poi-center-btn:hover,
+.poi-connect-btn:hover { border-color: #00ffcc; color: #00ffcc; }
+.poi-connect-btn.active { border-color: #00ffcc; color: #00ffcc; background: #1a3a33; }
+
+@keyframes dash-flow {
+  to { stroke-dashoffset: -18; }
+}
+.poi-connection-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-shadow: 0 0 4px #000, 0 0 4px #000, 0 0 4px #000;
+  pointer-events: none;
+  white-space: nowrap;
+  text-align: center;
+}
+.poi-connection-label span {
+  display: inline-block;
+  transform-origin: center center;
+}
 
 .empty {
   font-size: 12px;

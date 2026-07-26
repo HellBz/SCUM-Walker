@@ -113,6 +113,7 @@ pub(crate) struct AppState {
     live_tracking: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
     chat_paused: Mutex<bool>,
+    poi_connections: Mutex<Vec<String>>,
 }
 
 impl AppState {
@@ -911,6 +912,17 @@ fn get_tracking_interval(state: State<Arc<AppState>>) -> u64 {
 }
 
 #[tauri::command]
+fn ws_broadcast_msg(message: String) {
+    ws_broadcast(message);
+}
+
+#[tauri::command]
+fn set_poi_connections(state: State<Arc<AppState>>, ids: Vec<String>) {
+    *state.poi_connections.lock().unwrap() = ids.clone();
+    ws_broadcast(serde_json::json!({"type": "poi-connections", "ids": ids}).to_string());
+}
+
+#[tauri::command]
 fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.pois.push(poi);
@@ -1182,6 +1194,7 @@ fn main() {
                 live_tracking: Mutex::new(false),
                 current_position: Mutex::new(None),
                 chat_paused: Mutex::new(false),
+                poi_connections: Mutex::new(Vec::new()),
             });
 
             #[cfg(windows)]
@@ -1241,6 +1254,8 @@ fn main() {
             is_live_tracking,
             set_tracking_interval,
             get_tracking_interval,
+            ws_broadcast_msg,
+            set_poi_connections,
             add_poi,
             update_poi,
             remove_poi,

@@ -210,6 +210,9 @@ let poiMarkers = [];
 let liveMarker = null;
 let liveArrow = null;
 let livePulse = null;
+let connectionLines = [];
+let connectionLabels = [];
+let connectedPoiIds = new Set();
 
 function clearRoutes() {
   Object.values(routeLayers).forEach(l => map.removeLayer(l));
@@ -227,6 +230,271 @@ function clearLiveMarker() {
   if (liveMarker) { map.removeLayer(liveMarker); liveMarker = null; }
   if (liveArrow) { map.removeLayer(liveArrow); liveArrow = null; }
   if (livePulse) { map.removeLayer(livePulse); livePulse = null; }
+}
+
+let connectionLayersByPoi = {};
+let lineAnimFrame = null;
+let lineAnimFrom = null;
+let lineAnimStart = 0;
+
+function lerpLatLng(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+function lerpSeg(a, b, t) {
+  return a.map((pt, i) => lerpLatLng(pt, b[i], t));
+}
+
+function captureLineState() {
+  const state = {};
+  Object.entries(connectionLayersByPoi).forEach(([id, entry]) => {
+    state[id] = {
+      seg1: entry.seg1 ? entry.seg1.getLatLngs().map(l => [l.lat, l.lng]) : null,
+      seg2: entry.seg2 ? entry.seg2.getLatLngs().map(l => [l.lat, l.lng]) : null,
+      label: entry.label ? entry.label.getLatLng() : null,
+    };
+  });
+  return state;
+}
+
+function applyLineState(state, t, targetState) {
+  Object.entries(targetState).forEach(([id, target]) => {
+    const entry = connectionLayersByPoi[id];
+    if (!entry) return;
+    const from = state[id];
+    if (from && target.seg1 && entry.seg1) {
+      const interp = lerpSeg(from.seg1, target.seg1, t);
+      entry.seg1.setLatLngs(interp);
+    } else if (target.seg1 && entry.seg1) {
+      entry.seg1.setLatLngs(target.seg1);
+    }
+    if (from && target.seg2 && entry.seg2) {
+      const interp = lerpSeg(from.seg2, target.seg2, t);
+      entry.seg2.setLatLngs(interp);
+    } else if (target.seg2 && entry.seg2) {
+      entry.seg2.setLatLngs(target.seg2);
+    }
+    if (from && target.label && entry.label) {
+      const interp = lerpLatLng(from.label, target.label, t);
+      entry.label.setLatLng(interp);
+    } else if (target.label && entry.label) {
+      entry.label.setLatLng(target.label);
+    }
+  });
+}
+
+function clearConnectionLine() {
+  Object.values(connectionLayersByPoi).forEach(entry => {
+    if (entry.seg1) map.removeLayer(entry.seg1);
+    if (entry.seg2) map.removeLayer(entry.seg2);
+    if (entry.label) map.removeLayer(entry.label);
+  });
+  connectionLayersByPoi = {};
+  connectionLines = [];
+  connectionLabels = [];
+}
+
+function renderConnectionLine() {
+  if (!currentCoord) {
+    clearConnectionLine();
+    return;
+  }
+  const prevState = captureLineState();
+  const activeIds = new Set();
+  const targetState = {};
+
+  connectedPoiIds.forEach(id => {
+    const poi = data.pois.find(p => p.id === id);
+    if (!poi) return;
+    activeIds.add(id);
+    const from = gameToLatLng(currentCoord.x, currentCoord.y);
+    const to = gameToLatLng(poi.x, poi.y);
+    const dx = poi.x - currentCoord.x;
+    const dy = poi.y - currentCoord.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const color = poi.color || '#888';
+
+    const pFrom = map.latLngToContainerPoint(L.latLng(from[0], from[1]));
+    const pTo = map.latLngToContainerPoint(L.latLng(to[0], to[1]));
+    const angleRad = Math.atan2(pTo.y - pFrom.y, pTo.x - pFrom.x);
+    const angle = angleRad * 180 / Math.PI;
+    let textAngle = angle;
+    if (textAngle > 90) textAngle -= 180;
+    if (textAngle < -90) textAngle += 180;
+
+    let seg1LatLngs, seg2LatLngs, labelLatLng, hasLabel = false;
+
+    if (dist > 200) {
+      const mapSize = map.getSize();
+      const inset = 50;
+      const dirX = Math.cos(angleRad);
+      const dirY = Math.sin(angleRad);
+      let tEdge = Infinity;
+      if (dirX > 0.001) tEdge = Math.min(tEdge, (mapSize.x - inset - pFrom.x) / dirX);
+      if (dirX < -0.001) tEdge = Math.min(tEdge, (inset - pFrom.x) / dirX);
+      if (dirY > 0.001) tEdge = Math.min(tEdge, (mapSize.y - inset - pFrom.y) / dirY);
+      if (dirY < -0.001) tEdge = Math.min(tEdge, (inset - pFrom.y) / dirY);
+      const distToPoi = Math.sqrt((pTo.x - pFrom.x) ** 2 + (pTo.y - pFrom.y) ** 2);
+      const labelDist = Math.min(tEdge, distToPoi - 30);
+      if (labelDist >= 40) {
+        hasLabel = true;
+        const labelPxX = pFrom.x + dirX * labelDist;
+        const labelPxY = pFrom.y + dirY * labelDist;
+        labelLatLng = map.containerPointToLatLng(L.point(labelPxX, labelPxY));
+        const gapPx = 30;
+        const gap1PxX = pFrom.x + dirX * (labelDist - gapPx);
+        const gap1PxY = pFrom.y + dirY * (labelDist - gapPx);
+        const gap1LatLng = map.containerPointToLatLng(L.point(gap1PxX, gap1PxY));
+        const gap2PxX = pFrom.x + dirX * (labelDist + gapPx);
+        const gap2PxY = pFrom.y + dirY * (labelDist + gapPx);
+        const gap2LatLng = map.containerPointToLatLng(L.point(gap2PxX, gap2PxY));
+        seg1LatLngs = [from, [gap1LatLng.lat, gap1LatLng.lng]];
+        seg2LatLngs = [[gap2LatLng.lat, gap2LatLng.lng], to];
+      } else {
+        seg1LatLngs = [from, to];
+        seg2LatLngs = null;
+      }
+    } else {
+      seg1LatLngs = [from, to];
+      seg2LatLngs = null;
+    }
+
+    targetState[id] = {
+      seg1: seg1LatLngs ? seg1LatLngs.map(p => [p[0], p[1]]) : null,
+      seg2: seg2LatLngs ? seg2LatLngs.map(p => [p[0], p[1]]) : null,
+      label: hasLabel ? [labelLatLng.lat, labelLatLng.lng] : null,
+      textAngle, color, poiLabel: poi.label,
+    };
+
+    let entry = connectionLayersByPoi[id];
+    if (!entry) {
+      entry = { seg1: null, seg2: null, label: null, color };
+      connectionLayersByPoi[id] = entry;
+    }
+
+    const lineOpts = {
+      color, weight: 2, opacity: 0.7,
+      dashArray: '8,4,2,4', dashOffset: 0,
+      className: 'poi-connection-line',
+    };
+
+    if (!entry.seg1) {
+      entry.seg1 = L.polyline(seg1LatLngs, lineOpts).addTo(map);
+      connectionLines.push(entry.seg1);
+    }
+
+    if (seg2LatLngs && !entry.seg2) {
+      entry.seg2 = L.polyline(seg2LatLngs, lineOpts).addTo(map);
+      connectionLines.push(entry.seg2);
+    } else if (!seg2LatLngs && entry.seg2) {
+      map.removeLayer(entry.seg2);
+      entry.seg2 = null;
+    }
+
+    if (hasLabel && !entry.label) {
+      entry.label = L.marker([labelLatLng.lat, labelLatLng.lng], {
+        icon: L.divIcon({
+          className: 'poi-connection-label',
+          html: `<span style="color:${color};transform:rotate(${textAngle}deg)">${escapeHtml(poi.label)}</span>`,
+          iconSize: [120, 20],
+          iconAnchor: [60, 10],
+        }),
+        interactive: false,
+      }).addTo(map);
+      connectionLabels.push(entry.label);
+    } else if (!hasLabel && entry.label) {
+      map.removeLayer(entry.label);
+      entry.label = null;
+    }
+  });
+
+  Object.keys(connectionLayersByPoi).forEach(id => {
+    if (!activeIds.has(id)) {
+      const entry = connectionLayersByPoi[id];
+      if (entry.seg1) map.removeLayer(entry.seg1);
+      if (entry.seg2) map.removeLayer(entry.seg2);
+      if (entry.label) map.removeLayer(entry.label);
+      delete connectionLayersByPoi[id];
+      delete prevState[id];
+    }
+  });
+
+  if (lineAnimFrame) cancelAnimationFrame(lineAnimFrame);
+  lineAnimStart = performance.now();
+  const duration = Math.max(300, (trackingInterval - 0.1) * 1000);
+
+  function animateLines(now) {
+    const elapsed = now - lineAnimStart;
+    const t = Math.min(1, elapsed / duration);
+    const eased = t < 0.5 ? 2 * t * t : 1 - (1 - t) * (1 - t);
+
+    Object.entries(targetState).forEach(([id, target]) => {
+      const entry = connectionLayersByPoi[id];
+      if (!entry) return;
+      const from = prevState[id];
+
+      if (entry.seg1 && target.seg1) {
+        if (from && from.seg1) {
+          entry.seg1.setLatLngs(lerpSeg(from.seg1, target.seg1, eased));
+        } else {
+          entry.seg1.setLatLngs(target.seg1);
+        }
+      }
+      if (entry.seg2 && target.seg2) {
+        if (from && from.seg2) {
+          entry.seg2.setLatLngs(lerpSeg(from.seg2, target.seg2, eased));
+        } else {
+          entry.seg2.setLatLngs(target.seg2);
+        }
+      }
+      if (entry.label && target.label) {
+        if (from && from.label) {
+          entry.label.setLatLng(lerpLatLng(from.label, target.label, eased));
+        } else {
+          entry.label.setLatLng(target.label);
+        }
+        const el = entry.label.getElement();
+        if (el) {
+          const span = el.querySelector('span');
+          if (span) {
+            span.style.color = target.color;
+            span.style.transform = `rotate(${target.textAngle}deg)`;
+            span.textContent = target.poiLabel;
+          }
+        }
+      }
+    });
+
+    if (t < 1) {
+      lineAnimFrame = requestAnimationFrame(animateLines);
+    } else {
+      lineAnimFrame = null;
+    }
+  }
+  lineAnimFrame = requestAnimationFrame(animateLines);
+}
+
+function broadcastPoiConnection() {
+  try {
+    invoke('set_poi_connections', { ids: [...connectedPoiIds] });
+  } catch (e) {}
+}
+
+let connectionUpdatePending = false;
+function updateConnectionLines() {
+  if (connectionUpdatePending) return;
+  connectionUpdatePending = true;
+  requestAnimationFrame(() => {
+    connectionUpdatePending = false;
+    if (connectedPoiIds.size === 0) return;
+    renderConnectionLine();
+  });
+}
+
+async function wsBroadcast(msg) {
+  try {
+    await invoke('ws_broadcast_msg', { message: msg });
+  } catch (e) {}
 }
 
 function renderRoutes() {
@@ -308,28 +576,47 @@ function renderLiveMarker() {
   clearLiveMarker();
   if (!currentCoord) return;
   const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+  updateLiveMarker(ll);
+}
 
-  let html = '<div class="live-marker"><div class="live-marker-dot"></div>';
-  if (typeof currentCoord.yaw === 'number') {
-    html += `<div class="live-marker-arrow" style="transform: translate(-50%, -50%) rotate(${currentCoord.yaw - 90}deg) translateY(-20px)"></div>`;
+function updateLiveMarker(ll) {
+  if (!currentCoord) return;
+  if (!ll) ll = gameToLatLng(currentCoord.x, currentCoord.y);
+  if (liveMarker) {
+    liveMarker.setLatLng(ll);
+    const el = liveMarker.getElement();
+    if (el) {
+      const stem = el.querySelector('.live-marker-stem');
+      const arrow = el.querySelector('.live-marker-arrow');
+      if (typeof currentCoord.yaw === 'number') {
+        if (stem) stem.style.transform = `translate(-50%, -50%) rotate(${currentCoord.yaw - 90}deg)`;
+        if (arrow) arrow.style.transform = `translate(-50%, -50%) rotate(${currentCoord.yaw - 90}deg) translateY(-12px)`;
+      }
+    }
+  } else {
+    let html = '<div class="live-marker"><div class="live-marker-dot"></div>';
+    if (typeof currentCoord.yaw === 'number') {
+      html += `<div class="live-marker-stem" style="transform: translate(-50%, -50%) rotate(${currentCoord.yaw - 90}deg)"></div>`;
+      html += `<div class="live-marker-arrow" style="transform: translate(-50%, -50%) rotate(${currentCoord.yaw - 90}deg) translateY(-12px)"></div>`;
+    }
+    html += '</div>';
+    liveMarker = L.marker(ll, {
+      icon: L.divIcon({
+        className: '',
+        html: html,
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+      }),
+      interactive: false,
+    }).addTo(map);
   }
-  html += '</div>';
-
-  liveMarker = L.marker(ll, {
-    icon: L.divIcon({
-      className: '',
-      html: html,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
-    }),
-    interactive: false,
-  }).addTo(map);
 }
 
 function renderMap() {
   renderRoutes();
   renderPois();
   renderLiveMarker();
+  renderConnectionLine();
 }
 
 function getCurrentRoute() {
@@ -385,10 +672,10 @@ function renderRouteList() {
       <span class="route-color" style="background:${route.color || '#888'}"></span>
       <span class="route-name">${escapeHtml(route.name)}</span>
       <span class="route-actions">
-        <button class="route-icon ${recordingHere ? 'recording' : ''}" data-action="record" data-id="${route.id}" title="${recordingHere ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten'}">${recordingHere ? '■' : '●'}</button>
-        <button class="route-icon ${visible ? '' : 'hidden'}" data-action="toggle-visibility" data-id="${route.id}" title="${visible ? 'Auf Karte ausblenden' : 'Auf Karte einblenden'}">${visible ? '◉' : '○'}</button>
-        <button class="route-icon" data-action="rename" data-id="${route.id}" title="Umbenennen">✎</button>
-        <button class="route-icon" data-action="delete" data-id="${route.id}" title="Löschen">🗑</button>
+        <button class="route-icon ${recordingHere ? 'recording' : ''}" data-action="record" data-id="${route.id}" title="${recordingHere ? 'Aufzeichnung stoppen' : 'Aufzeichnung starten'}">${recordingHere ? '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>' : '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>'}</button>
+        <button class="route-icon ${visible ? '' : 'hidden'}" data-action="toggle-visibility" data-id="${route.id}" title="${visible ? 'Auf Karte ausblenden' : 'Auf Karte einblenden'}">${visible ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>'}</button>
+        <button class="route-icon" data-action="rename" data-id="${route.id}" title="Umbenennen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+        <button class="route-icon" data-action="delete" data-id="${route.id}" title="Löschen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </span>
       <span class="route-count">${route.records.length} Punkte</span>
     `;
@@ -460,14 +747,60 @@ function renderPoiList() {
     const hasImage = !!poi.image_path;
     const div = document.createElement('div');
     div.className = 'poi-item';
-    div.innerHTML = `<span><span class="poi-color" style="background:${poi.color}"></span>${escapeHtml(poi.label)}</span>
+    div.innerHTML = `<span class="poi-label-span"><span class="poi-color" style="background:${poi.color}"></span>${escapeHtml(poi.label)}</span>
                      <span class="poi-actions">
-                       <button class="poi-edit" data-id="${poi.id}" title="POI bearbeiten">✎</button>
-                       <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Screenshot aus SCUM'}">${hasImage ? '👁' : '📸'}</button>
-                       <button class="poi-upload-btn" data-id="${poi.id}" title="Bild hochladen">�</button>
-                       <button class="poi-delete" data-id="${poi.id}" title="POI löschen">🗑</button>
+                       <button class="poi-center-btn" data-id="${poi.id}" title="Karte auf POI zentrieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
+                       <button class="poi-connect-btn ${connectedPoiIds.has(poi.id) ? 'active' : ''}" data-id="${poi.id}" title="${connectedPoiIds.has(poi.id) ? 'Verbindungslinie entfernen' : 'Verbindungslinie zu POI'}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><line x1="6.5" y1="6.5" x2="17.5" y2="17.5" stroke-dasharray="3,3"/></svg></button>
+                       <button class="poi-more-btn" data-id="${poi.id}" title="Mehr Aktionen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+                       <div class="poi-dropdown" data-id="${poi.id}">
+                         <button class="poi-edit" data-id="${poi.id}" title="POI bearbeiten"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Bearbeiten</button>
+                         <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Screenshot aus SCUM'}">${hasImage ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'} ${hasImage ? 'Bild' : 'Screenshot'}</button>
+                         <button class="poi-upload-btn" data-id="${poi.id}" title="Bild hochladen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload</button>
+                         <button class="poi-delete" data-id="${poi.id}" title="POI löschen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Löschen</button>
+                       </div>
                      </span>`;
     poiListEl.appendChild(div);
+  });
+
+  poiListEl.querySelectorAll('.poi-more-btn').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dropdown = el.nextElementSibling;
+      const isOpen = dropdown.classList.contains('open');
+      poiListEl.querySelectorAll('.poi-dropdown.open').forEach(d => d.classList.remove('open'));
+      if (!isOpen) dropdown.classList.add('open');
+    });
+  });
+
+  document.addEventListener('click', () => {
+    poiListEl.querySelectorAll('.poi-dropdown.open').forEach(d => d.classList.remove('open'));
+  });
+
+  poiListEl.querySelectorAll('.poi-dropdown').forEach(d => {
+    d.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  poiListEl.querySelectorAll('.poi-center-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const poi = data.pois.find(p => p.id === el.dataset.id);
+      if (!poi) return;
+      const ll = gameToLatLng(poi.x, poi.y);
+      map.flyTo(ll, 6, { duration: 0.8 });
+    });
+  });
+
+  poiListEl.querySelectorAll('.poi-connect-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      if (connectedPoiIds.has(id)) {
+        connectedPoiIds.delete(id);
+      } else {
+        connectedPoiIds.add(id);
+      }
+      renderConnectionLine();
+      broadcastPoiConnection();
+      updateUI();
+    });
   });
 
   poiListEl.querySelectorAll('.poi-edit').forEach(el => {
@@ -664,13 +997,20 @@ document.getElementById('poiSave').addEventListener('click', async () => {
 
 // Live tracking toggle
 let isLiveTracking = false;
+let trackingInterval = 3;
 const liveTrackingBtn = document.getElementById('toggleLiveTracking');
 const trackingIntervalInput = document.getElementById('trackingInterval');
 
+function updateMarkerTransition() {
+  const dur = Math.max(0.5, trackingInterval - 0.1);
+  document.documentElement.style.setProperty('--marker-transition', `${dur}s linear`);
+}
+
 async function syncTrackingInterval() {
   try {
-    const interval = await invoke('get_tracking_interval');
-    if (trackingIntervalInput) trackingIntervalInput.value = interval;
+    trackingInterval = await invoke('get_tracking_interval');
+    if (trackingIntervalInput) trackingIntervalInput.value = trackingInterval;
+    updateMarkerTransition();
   } catch (err) {}
 }
 syncTrackingInterval();
@@ -681,6 +1021,8 @@ if (trackingIntervalInput) {
     if (isNaN(val) || val < 1) val = 1;
     if (val > 60) val = 60;
     trackingIntervalInput.value = val;
+    trackingInterval = val;
+    updateMarkerTransition();
     await invoke('set_tracking_interval', { seconds: val });
   });
 }
@@ -759,8 +1101,10 @@ lockOverlayBtn.addEventListener('click', async () => {
   try {
     overlayLocked = !overlayLocked;
     await invoke('set_overlay_clickthrough', { clickthrough: overlayLocked });
-    lockOverlayBtn.textContent = overlayLocked ? '🔓' : '🔒';
+    lockOverlayBtn.innerHTML = overlayLocked ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
     lockOverlayBtn.title = overlayLocked ? 'Overlay entsperren' : 'Overlay sperren / Klick-durch';
+    lockOverlayBtn.classList.toggle('locked', overlayLocked);
+    lockOverlayBtn.classList.toggle('unlocked', !overlayLocked);
     statusEl.textContent = overlayLocked ? 'Overlay gesperrt (Klick-durch)' : 'Overlay entsperrt';
   } catch (err) {
     statusEl.textContent = 'Overlay-Lock: ' + err;
@@ -881,9 +1225,10 @@ if (window.__TAURI__.event) {
       route.records.push(event.payload);
     }
     statusEl.textContent = `Letzte Koordinate: X=${event.payload.x.toFixed(0)} Y=${event.payload.y.toFixed(0)}`;
-    renderMap();
+    const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+    updateLiveMarker(ll);
+    updateConnectionLines();
     if (followEnabled) {
-      const ll = gameToLatLng(currentCoord.x, currentCoord.y);
       map.panTo(ll, { animate: true, duration: 0.8 });
     }
   });
