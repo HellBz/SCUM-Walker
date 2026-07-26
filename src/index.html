@@ -12,7 +12,7 @@
   <div id="sidebar">
     <div class="sidebar-title">
       <span class="brand">SCUM Walker</span>
-      <span id="versionBadge" class="version-badge">v0.5.0</span>
+      <span id="versionBadge" class="version-badge">v0.6.1</span>
     </div>
 
     <div id="status">Bereit</div>
@@ -62,6 +62,9 @@
 
     <div class="section">
       <h3>POIs</h3>
+      <div class="poi-filter-row">
+        <select id="poiCategoryFilter"><option value="">Alle Kategorien</option></select>
+      </div>
       <button id="addPoiFromLocation">Aktuelle Position als POI</button>
       <p class="hint">Oder Rechtsklick auf die Karte.</p>
       <div id="poiList"></div>
@@ -99,6 +102,9 @@
     <div class="dialog-content">
       <h3 id="poiDialogTitle">POI hinzufügen</h3>
       <input type="text" id="poiLabel" placeholder="Name" maxlength="64">
+      <label for="poiCategorySelect" class="dialog-label">Kategorie</label>
+      <select id="poiCategorySelect"></select>
+      <input type="text" id="poiCategoryInput" placeholder="Neue Kategorie" style="display:none" maxlength="32">
       <div class="custom-color-row">
         <input type="color" id="poiColorPicker" value="#ff44d3">
       </div>

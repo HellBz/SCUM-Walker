@@ -264,7 +264,7 @@
   });
 
   // Data state
-  let data = { routes: [], current_route_id: null, pois: [] };
+  let data = { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
   let currentPos = null;
   let connected = false;
 
@@ -529,7 +529,8 @@
   function renderPois() {
     clearPois();
     if (!data.pois) return;
-    data.pois.forEach(poi => {
+    const hidden = data.hidden_categories || [];
+    data.pois.filter(poi => !hidden.includes(poi.category || 'Unkategorisiert')).forEach(poi => {
       const ll = gameToLatLng(poi.x, poi.y);
       const marker = L.circleMarker(ll, {
         radius: 6,
@@ -624,18 +625,20 @@
     switch (payload.type) {
       case 'login-success': {
         // Full settings received after login handshake
-        const newData = payload.data || { routes: [], current_route_id: null, pois: [] };
+        const newData = payload.data || { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
+        if (!newData.hidden_categories) newData.hidden_categories = [];
         const newPos = payload.current_position || null;
         if (payload.bounds) applyBounds(payload.bounds);
         if (payload.has_hires_tiles !== undefined) initTileLayer(payload.has_hires_tiles);
         const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
         const currentRouteChanged = newData.current_route_id !== data.current_route_id;
         const poisChanged = JSON.stringify(newData.pois) !== JSON.stringify(data.pois);
+        const hiddenChanged = JSON.stringify(newData.hidden_categories) !== JSON.stringify(data.hidden_categories || []);
         const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
         data = newData;
         currentPos = newPos;
         if (routesChanged || currentRouteChanged) renderRoutes();
-        if (poisChanged) renderPois();
+        if (poisChanged || hiddenChanged) renderPois();
         if (posChanged) renderLiveMarker();
         if (payload.poi_connections) {
           connectedPoiIds = new Set(payload.poi_connections);
@@ -671,14 +674,16 @@
         break;
       }
       case 'data-updated': {
-        const newData = payload.data || { routes: [], current_route_id: null, pois: [] };
+        const newData = payload.data || { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
+        if (!newData.hidden_categories) newData.hidden_categories = [];
         const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
         const currentRouteChanged = newData.current_route_id !== data.current_route_id;
         const poisChanged = JSON.stringify(newData.pois) !== JSON.stringify(data.pois);
+        const hiddenChanged = JSON.stringify(newData.hidden_categories) !== JSON.stringify(data.hidden_categories || []);
         data = newData;
         if (routesChanged || currentRouteChanged) renderRoutes();
-        if (poisChanged) renderPois();
-        if (poisChanged && connectedPoiIds.size > 0) renderConnectionLine();
+        if (poisChanged || hiddenChanged) renderPois();
+        if ((poisChanged || hiddenChanged) && connectedPoiIds.size > 0) renderConnectionLine();
         break;
       }
       case 'poi-creating': {

@@ -15,11 +15,16 @@ const poiColorsEl = document.getElementById('poiColors');
 const imageDialog = document.getElementById('imageDialog');
 const imageDialogImg = document.getElementById('imageDialogImg');
 const imageDialogTitle = document.getElementById('imageDialogTitle');
+const poiCategorySelect = document.getElementById('poiCategorySelect');
+const poiCategoryInput = document.getElementById('poiCategoryInput');
+const poiCategoryFilter = document.getElementById('poiCategoryFilter');
 
 const ROUTE_COLORS = ['#00ffcc', '#ff8800', '#4488ff', '#ff44d3', '#ffee00', '#44cc44', '#ff4444', '#ffffff'];
 const POI_COLORS = ['#ff44d3', '#ff8800', '#44cc44', '#4488ff', '#ffee00', '#ff4444', '#ffffff'];
 let selectedRouteColor = ROUTE_COLORS[0];
 let selectedPoiColor = POI_COLORS[0];
+let selectedPoiCategory = '';
+let hiddenPoiCategories = new Set();
 let pendingPoi = null;
 let editingPoiId = null;
 
@@ -80,6 +85,57 @@ function latLngToGame(lat, lng) {
   const gameX = worldMaxX - (px / MAP_UNITS) * worldWidth;
   const gameY = worldMaxY - (py / MAP_UNITS) * worldHeight;
   return { x: gameX, y: gameY };
+}
+
+const SECTOR_ROWS = ['D','C','B','A','Z'];
+const SECTOR_COLS = ['4','3','2','1','0'];
+function getSector(x, y) {
+  const width = worldMaxX - worldMinX;
+  const height = worldMaxY - worldMinY;
+  // SCUM X axis is inverted: X max = west/left (col 4), X min = east/right (col 0)
+  const col = Math.floor(((worldMaxX - x) / width) * SECTOR_COLS.length);
+  const row = Math.floor(((worldMaxY - y) / height) * SECTOR_ROWS.length);
+  const c = Math.max(0, Math.min(SECTOR_COLS.length - 1, col));
+  const r = Math.max(0, Math.min(SECTOR_ROWS.length - 1, row));
+  return SECTOR_ROWS[r] + SECTOR_COLS[c];
+}
+
+function getPoiCategories() {
+  const cats = new Set();
+  data.pois.forEach(p => { if (p.category) cats.add(p.category); });
+  return Array.from(cats).sort();
+}
+
+function syncHiddenPoiCategories() {
+  const cats = new Set(data.hidden_categories || []);
+  hiddenPoiCategories = cats;
+}
+
+function populatePoiCategorySelect(current, fallback) {
+  const cats = getPoiCategories();
+  if (current && !cats.includes(current)) cats.push(current);
+  if (fallback && !cats.includes(fallback)) cats.push(fallback);
+  cats.sort();
+  poiCategorySelect.innerHTML = '';
+  cats.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    if (cat === (current || fallback)) opt.selected = true;
+    poiCategorySelect.appendChild(opt);
+  });
+  const neuOpt = document.createElement('option');
+  neuOpt.value = '__new__';
+  neuOpt.textContent = 'Neue Kategorie...';
+  poiCategorySelect.appendChild(neuOpt);
+  if ((current || fallback) && !cats.includes(current || fallback)) {
+    poiCategorySelect.value = '__new__';
+    poiCategoryInput.style.display = '';
+    poiCategoryInput.value = current || fallback;
+  } else {
+    poiCategoryInput.style.display = 'none';
+    poiCategoryInput.value = '';
+  }
 }
 
 // Get HTTP server base URL for tiles
@@ -532,7 +588,11 @@ function renderRoutes() {
 
 function renderPois() {
   clearPois();
-  data.pois.forEach(poi => {
+  const filter = poiCategoryFilter ? poiCategoryFilter.value : '';
+  data.pois
+    .filter(poi => !filter || poi.category === filter)
+    .filter(poi => !hiddenPoiCategories.has(poi.category || 'Unkategorisiert'))
+    .forEach(poi => {
     const ll = gameToLatLng(poi.x, poi.y);
     const marker = L.circleMarker(ll, {
       radius: 6,
@@ -628,6 +688,8 @@ async function loadData() {
     data = await invoke('get_data');
     if (!data.routes) data.routes = [];
     if (!data.pois) data.pois = [];
+    if (!data.hidden_categories) data.hidden_categories = [];
+    syncHiddenPoiCategories();
     await syncRecordingState();
     await syncLiveTrackingState();
     updateUI();
@@ -637,6 +699,7 @@ async function loadData() {
 }
 
 function updateUI() {
+  syncHiddenPoiCategories();
   renderRouteList();
   renderPoiList();
   renderMap();
@@ -738,12 +801,45 @@ function renderRouteList() {
 }
 
 function renderPoiList() {
+  const savedFilter = poiCategoryFilter ? poiCategoryFilter.value : '';
+  const categories = getPoiCategories();
+  if (poiCategoryFilter) {
+    poiCategoryFilter.innerHTML = '<option value="">Alle Kategorien</option>';
+    categories.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      if (cat === savedFilter) opt.selected = true;
+      poiCategoryFilter.appendChild(opt);
+    });
+  }
+
   poiListEl.innerHTML = '';
   if (data.pois.length === 0) {
     poiListEl.innerHTML = '<p class="empty">Keine POIs</p>';
     return;
   }
-  data.pois.forEach(poi => {
+
+  const filter = poiCategoryFilter ? poiCategoryFilter.value : '';
+  const filtered = data.pois
+    .filter(poi => !filter || (poi.category || 'Unkategorisiert') === filter)
+    .sort((a, b) => (a.category || 'Unkategorisiert').localeCompare(b.category || 'Unkategorisiert'));
+  let currentCat = null;
+  const eyeOpen = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const eyeOff = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+  let currentCatHidden = false;
+  filtered.forEach(poi => {
+    const cat = poi.category || 'Unkategorisiert';
+    if (cat !== currentCat) {
+      currentCat = cat;
+      currentCatHidden = hiddenPoiCategories.has(cat);
+      const count = filtered.filter(p => (p.category || 'Unkategorisiert') === cat).length;
+      const header = document.createElement('div');
+      header.className = 'poi-group-header' + (currentCatHidden ? ' hidden' : '');
+      header.innerHTML = `<span class="poi-group-title">${cat} (${count})</span><button class="poi-visibility-toggle" data-cat="${cat}" title="${currentCatHidden ? 'Kategorie einblenden' : 'Kategorie ausblenden'}">${currentCatHidden ? eyeOff : eyeOpen}</button>`;
+      poiListEl.appendChild(header);
+    }
+    if (currentCatHidden) return;
     const hasImage = !!poi.image_path;
     const div = document.createElement('div');
     div.className = 'poi-item';
@@ -813,6 +909,7 @@ function renderPoiList() {
       poiDialogTitle.textContent = 'POI bearbeiten';
       poiLabelInput.value = poi.label;
       poiColorPicker.value = selectedPoiColor;
+      populatePoiCategorySelect(poi.category, '');
       buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
       poiDialog.classList.add('open');
       poiLabelInput.focus();
@@ -879,6 +976,16 @@ function renderPoiList() {
       updateUI();
     });
   });
+
+  poiListEl.querySelectorAll('.poi-visibility-toggle').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const cat = el.dataset.cat;
+      data = await invoke('toggle_hidden_category', { category: cat });
+      syncHiddenPoiCategories();
+      updateUI();
+    });
+  });
 }
 
 function buildColorPicker(container, colors, selected, onSelect, pickerInput) {
@@ -904,6 +1011,7 @@ map.on('contextmenu', (e) => {
   const game = latLngToGame(e.latlng.lat, e.latlng.lng);
   pendingPoi = game;
   poiLabelInput.value = '';
+  populatePoiCategorySelect('', getSector(game.x, game.y));
   buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
   poiDialog.classList.add('open');
   poiLabelInput.focus();
@@ -913,6 +1021,24 @@ poiColorPicker.addEventListener('input', (e) => {
   selectedPoiColor = e.target.value.toLowerCase();
   buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
 });
+
+if (poiCategorySelect) {
+  poiCategorySelect.addEventListener('change', () => {
+    if (poiCategorySelect.value === '__new__') {
+      poiCategoryInput.style.display = '';
+      poiCategoryInput.focus();
+    } else {
+      poiCategoryInput.style.display = 'none';
+      poiCategoryInput.value = '';
+    }
+  });
+}
+
+if (poiCategoryFilter) {
+  poiCategoryFilter.addEventListener('change', () => {
+    updateUI();
+  });
+}
 
 // Route dialog
 function openRouteDialog() {
@@ -964,6 +1090,7 @@ document.getElementById('addPoiFromLocation').addEventListener('click', async ()
     poiDialogTitle.textContent = 'POI hinzufügen';
     poiLabelInput.value = '';
     poiColorPicker.value = selectedPoiColor;
+    populatePoiCategorySelect('', getSector(record.x, record.y));
     buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
     poiDialog.classList.add('open');
     poiLabelInput.focus();
@@ -975,8 +1102,10 @@ document.getElementById('addPoiFromLocation').addEventListener('click', async ()
 
 document.getElementById('poiSave').addEventListener('click', async () => {
   const label = poiLabelInput.value.trim() || 'POI';
+  const rawCategory = poiCategorySelect.value === '__new__' ? poiCategoryInput.value.trim() : poiCategorySelect.value;
+  const category = rawCategory || (pendingPoi ? getSector(pendingPoi.x, pendingPoi.y) : '');
   if (editingPoiId) {
-    data = await invoke('update_poi', { id: editingPoiId, label, color: selectedPoiColor });
+    data = await invoke('update_poi', { id: editingPoiId, label, color: selectedPoiColor, category });
   } else {
     if (!pendingPoi) return;
     const poi = {
@@ -985,7 +1114,8 @@ document.getElementById('poiSave').addEventListener('click', async () => {
       x: pendingPoi.x,
       y: pendingPoi.y,
       type: 'general',
-      color: selectedPoiColor
+      color: selectedPoiColor,
+      category
     };
     data = await invoke('add_poi', { poi });
   }
@@ -1210,6 +1340,8 @@ if (window.__TAURI__.event) {
     data = event.payload;
     if (!data.routes) data.routes = [];
     if (!data.pois) data.pois = [];
+    if (!data.hidden_categories) data.hidden_categories = [];
+    syncHiddenPoiCategories();
     updateUI();
   });
 

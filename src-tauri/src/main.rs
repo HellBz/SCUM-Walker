@@ -47,6 +47,27 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const DEFAULT_INTERVAL_SECONDS: u64 = 10;
 const SCUM_WINDOW_TITLES: &[&str] = &["SCUM", "SCUM ", "SCUM Early Access"];
 
+// SCUM map sector grid: rows north->south D,C,B,A,Z; cols west->east 4,3,2,1,0
+const SECTOR_ROWS: &[char] = &['D', 'C', 'B', 'A', 'Z'];
+const SECTOR_COLS: &[char] = &['4', '3', '2', '1', '0'];
+const SECTOR_WORLD_MIN_X: f64 = -904800.0;
+const SECTOR_WORLD_MAX_X: f64 = 619318.0;
+const SECTOR_WORLD_MIN_Y: f64 = -904800.0;
+const SECTOR_WORLD_MAX_Y: f64 = 618818.0;
+
+fn compute_sector(x: f64, y: f64) -> String {
+    let width = SECTOR_WORLD_MAX_X - SECTOR_WORLD_MIN_X;
+    let height = SECTOR_WORLD_MAX_Y - SECTOR_WORLD_MIN_Y;
+    // SCUM X axis is inverted: X max = west/left (col 4), X min = east/right (col 0)
+    let col_idx = ((SECTOR_WORLD_MAX_X - x) / width * SECTOR_COLS.len() as f64)
+        .floor()
+        .clamp(0.0, (SECTOR_COLS.len() - 1) as f64) as usize;
+    let row_idx = ((SECTOR_WORLD_MAX_Y - y) / height * SECTOR_ROWS.len() as f64)
+        .floor()
+        .clamp(0.0, (SECTOR_ROWS.len() - 1) as f64) as usize;
+    format!("{}{}", SECTOR_ROWS[row_idx], SECTOR_COLS[col_idx])
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CoordRecord {
     time: DateTime<Utc>,
@@ -95,7 +116,11 @@ struct Poi {
     color: String,
     #[serde(default)]
     image_path: Option<String>,
+    #[serde(default = "default_poi_category")]
+    category: String,
 }
+
+fn default_poi_category() -> String { "Unkategorisiert".to_string() }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 struct AppData {
@@ -104,10 +129,16 @@ struct AppData {
     pois: Vec<Poi>,
     #[serde(default = "default_interval")]
     tracking_interval: u64,
+    #[serde(default = "default_hidden_categories")]
+    hidden_categories: Vec<String>,
 }
 
 fn default_interval() -> u64 {
     DEFAULT_INTERVAL_SECONDS
+}
+
+fn default_hidden_categories() -> Vec<String> {
+    Vec::new()
 }
 
 pub(crate) struct AppState {
@@ -153,6 +184,12 @@ fn load_data(path: &PathBuf) -> AppData {
             for (i, route) in data.routes.iter_mut().enumerate() {
                 if route.color.is_empty() {
                     route.color = ROUTE_COLORS[i % ROUTE_COLORS.len()].to_string();
+                }
+            }
+            // Assign sector category to old POIs without a category
+            for poi in data.pois.iter_mut() {
+                if poi.category.is_empty() || poi.category == "Unkategorisiert" {
+                    poi.category = compute_sector(poi.x, poi.y);
                 }
             }
             return data;
@@ -357,6 +394,7 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     poi_type: "auto".to_string(),
                     color: "#ff8800".to_string(),
                     image_path: None,
+                    category: compute_sector(record.x, record.y),
                 };
 
                 // 4. Screenshot in separatem Thread (blockiert nicht HTTP-Server)
@@ -951,7 +989,10 @@ fn set_poi_connections(state: State<Arc<AppState>>, ids: Vec<String>) {
 }
 
 #[tauri::command]
-fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
+fn add_poi(state: State<Arc<AppState>>, mut poi: Poi) -> AppData {
+    if poi.category.is_empty() {
+        poi.category = compute_sector(poi.x, poi.y);
+    }
     let mut data = state.data.lock().unwrap();
     data.pois.push(poi);
     save_data(&state.data_path, &data);
@@ -961,11 +1002,12 @@ fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
 }
 
 #[tauri::command]
-fn update_poi(state: State<Arc<AppState>>, id: String, label: String, color: String) -> AppData {
+fn update_poi(state: State<Arc<AppState>>, id: String, label: String, color: String, category: String) -> AppData {
     let mut data = state.data.lock().unwrap();
     if let Some(poi) = data.pois.iter_mut().find(|poi| poi.id == id) {
         poi.label = label;
         poi.color = color;
+        poi.category = if category.is_empty() { compute_sector(poi.x, poi.y) } else { category };
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
@@ -977,6 +1019,20 @@ fn update_poi(state: State<Arc<AppState>>, id: String, label: String, color: Str
 fn remove_poi(state: State<Arc<AppState>>, id: String) -> AppData {
     let mut data = state.data.lock().unwrap();
     data.pois.retain(|p| p.id != id);
+    save_data(&state.data_path, &data);
+    let clone = data.clone();
+    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    clone
+}
+
+#[tauri::command]
+fn toggle_hidden_category(state: State<Arc<AppState>>, category: String) -> AppData {
+    let mut data = state.data.lock().unwrap();
+    if let Some(pos) = data.hidden_categories.iter().position(|c| c == &category) {
+        data.hidden_categories.remove(pos);
+    } else {
+        data.hidden_categories.push(category);
+    }
     save_data(&state.data_path, &data);
     let clone = data.clone();
     ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
@@ -1287,6 +1343,7 @@ fn main() {
             add_poi,
             update_poi,
             remove_poi,
+            toggle_hidden_category,
             paste_poi_screenshot,
             get_poi_image_base64,
             upload_poi_image,
