@@ -21,7 +21,7 @@ use std::ffi::OsStr;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
 #[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
@@ -35,9 +35,13 @@ use windows::Win32::System::Threading::{
     OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
 };
 #[cfg(windows)]
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_CONTROL, VK_C,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,
-    IsWindowVisible, PostMessageW, SetForegroundWindow, WM_KEYDOWN, WM_KEYUP,
+    IsWindowVisible,
 };
 
 const DEFAULT_INTERVAL_SECONDS: u64 = 10;
@@ -222,20 +226,6 @@ fn find_scum_window() -> Option<HWND> {
 fn find_scum_window() -> Option<()> { None }
 
 #[cfg(windows)]
-fn focus_scum_window() {
-    if let Some(hwnd) = find_scum_window() {
-        unsafe { let _ = SetForegroundWindow(hwnd); }
-    }
-}
-
-#[cfg(not(windows))]
-fn focus_scum_window() {}
-
-#[cfg(windows)]
-const VK_CONTROL: u16 = 0x11;
-#[cfg(windows)]
-const VK_C: u16 = 0x43;
-#[cfg(windows)]
 const VK_T: u16 = 0x54;
 #[cfg(windows)]
 const VK_F9: u16 = 0x78;
@@ -329,7 +319,7 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 ws_broadcast(serde_json::json!({"type": "poi-creating"}).to_string());
 
                 // 1. Ctrl+C an SCUM senden für Koordinaten
-                if send_ctrl_c_to_scum().is_err() {
+                if send_ctrl_c_to_scum(Some(&state)).is_err() {
                     eprintln!("[hotkey] Ctrl+C fehlgeschlagen");
                     processing.store(false, std::sync::atomic::Ordering::SeqCst);
                     thread::sleep(Duration::from_millis(500));
@@ -422,22 +412,60 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 }
 
 #[cfg(windows)]
-fn send_ctrl_c_to_scum() -> Result<(), String> {
+fn send_ctrl_c_to_scum(state: Option<&AppState>) -> Result<(), String> {
     let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden")?;
-    unsafe {
-        let _ = PostMessageW(hwnd, WM_KEYDOWN, WPARAM(VK_CONTROL as usize), LPARAM(0));
-        std::thread::sleep(Duration::from_millis(20));
-        let _ = PostMessageW(hwnd, WM_KEYDOWN, WPARAM(VK_C as usize), LPARAM(0));
-        std::thread::sleep(Duration::from_millis(50));
-        let _ = PostMessageW(hwnd, WM_KEYUP, WPARAM(VK_C as usize), LPARAM(0));
-        std::thread::sleep(Duration::from_millis(20));
-        let _ = PostMessageW(hwnd, WM_KEYUP, WPARAM(VK_CONTROL as usize), LPARAM(0));
+
+    if let Some(s) = state {
+        if *s.chat_paused.lock().unwrap() {
+            return Err("Chat ist geöffnet - sende kein Ctrl+C".to_string());
+        }
     }
+
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0 == 0 || Some(hwnd) != find_scum_window() || fg != hwnd {
+        return Err("SCUM ist nicht im Vordergrund".to_string());
+    }
+
+    fn kbd_input(scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0),
+                    wScan: scan,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    let ctrl_scan = unsafe { MapVirtualKeyW(VK_CONTROL.0 as u32, MAPVK_VK_TO_VSC) as u16 };
+    let c_scan = unsafe { MapVirtualKeyW(VK_C.0 as u32, MAPVK_VK_TO_VSC) as u16 };
+    let scan_down = KEYBD_EVENT_FLAGS(KEYEVENTF_SCANCODE.0);
+    let scan_up = KEYBD_EVENT_FLAGS(KEYEVENTF_SCANCODE.0 | KEYEVENTF_KEYUP.0);
+
+    unsafe {
+        SendInput(
+            &[kbd_input(ctrl_scan, scan_down), kbd_input(c_scan, scan_down)],
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+    std::thread::sleep(Duration::from_millis(60));
+    unsafe {
+        SendInput(
+            &[kbd_input(c_scan, scan_up), kbd_input(ctrl_scan, scan_up)],
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+    std::thread::sleep(Duration::from_millis(50));
+
     Ok(())
 }
 
 #[cfg(not(windows))]
-fn send_ctrl_c_to_scum() -> Result<(), String> {
+fn send_ctrl_c_to_scum(_state: Option<&AppState>) -> Result<(), String> {
     Err("Nicht unterstützt auf dieser Plattform".to_string())
 }
 
@@ -548,7 +576,7 @@ fn capture_scum_window() -> Option<image::RgbaImage> { None }
 
 #[tauri::command]
 fn get_current_location() -> Result<CoordRecord, String> {
-    send_ctrl_c_to_scum()?;
+    send_ctrl_c_to_scum(None)?;
     std::thread::sleep(Duration::from_millis(300));
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     let text = clipboard.get_text().map_err(|e| e.to_string())?;
@@ -584,7 +612,7 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                         continue;
                     }
                 }
-                if send_ctrl_c_to_scum().is_err() {
+                if send_ctrl_c_to_scum(Some(&state)).is_err() {
                     let interval = state.data.lock().unwrap().tracking_interval;
                     thread::sleep(Duration::from_secs(interval));
                     continue;

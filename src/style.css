@@ -340,6 +340,8 @@ button:hover { background: #3a3a3a; }
   border-right: 4px solid transparent;
   border-bottom: 9px solid #00ffcc;
   transform-origin: 50% 50%;
+  transform: translate(-50%, -50%) rotate(var(--yaw, 0deg)) translateY(-12px);
+  transition: transform 0.2s linear;
 }
 .live-marker-stem {
   position: absolute;
@@ -350,6 +352,8 @@ button:hover { background: #3a3a3a; }
   background: #00ffcc;
   transform-origin: 50% 100%;
   margin-top: -7px;
+  transform: translate(-50%, -50%) rotate(var(--yaw, 0deg));
+  transition: transform 0.2s linear;
 }
 
 .dialog {

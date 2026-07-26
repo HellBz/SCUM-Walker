@@ -584,15 +584,15 @@
         const stem = el.querySelector('.live-marker-stem');
         const arrow = el.querySelector('.live-marker-arrow');
         if (typeof currentPos.yaw === 'number') {
-          if (stem) stem.style.transform = `translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg)`;
-          if (arrow) arrow.style.transform = `translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg) translateY(-12px)`;
+          if (stem) stem.style.setProperty('--yaw', `${currentPos.yaw - 90}deg`);
+          if (arrow) arrow.style.setProperty('--yaw', `${currentPos.yaw - 90}deg`);
         }
       }
     } else {
       let html = '<div class="live-marker"><div class="live-marker-dot"></div>';
       if (typeof currentPos.yaw === 'number') {
-        html += `<div class="live-marker-stem" style="transform: translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg)"></div>`;
-        html += `<div class="live-marker-arrow" style="transform: translate(-50%, -50%) rotate(${currentPos.yaw - 90}deg) translateY(-12px)"></div>`;
+        html += `<div class="live-marker-stem" style="--yaw:${currentPos.yaw - 90}deg"></div>`;
+        html += `<div class="live-marker-arrow" style="--yaw:${currentPos.yaw - 90}deg"></div>`;
       }
       html += '</div>';
       liveMarker = L.marker(ll, {
