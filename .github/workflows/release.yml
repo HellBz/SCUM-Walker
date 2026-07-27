@@ -58,8 +58,23 @@ jobs:
         run: npm ci
         continue-on-error: true
 
-      - name: Build Tauri app
-        id: tauri-build
+      - name: Build Tauri app (Windows - with release upload)
+        if: matrix.platform == 'windows-latest'
+        id: tauri-build-win
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'SCUM Walker ${{ github.ref_name }}'
+          releaseBody: 'SCUM Walker ${{ github.ref_name }}'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (Linux/macOS - no release upload)
+        if: matrix.platform != 'windows-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -138,7 +153,7 @@ jobs:
           
           cat artifacts/latest.json
 
-      - name: Create release
+      - name: Create release (update body, add latest.json + tiles)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -156,4 +171,8 @@ jobs:
             - Linux/macOS: Click the link to open the release page / Klicke auf den Link um die Release-Seite zu öffnen
           draft: false
           prerelease: false
-          files: artifacts/**/*
+          files: |
+            artifacts/latest.json
+            artifacts/build-ubuntu-22.04/*
+            artifacts/build-macos-latest/*
+            artifacts/tiles-hires/*
