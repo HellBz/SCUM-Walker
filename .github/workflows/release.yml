@@ -69,9 +69,20 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'SCUM Walker ${{ github.ref_name }}'
-          releaseBody: 'SCUM Walker ${{ github.ref_name }}'
+          releaseBody: |
+            ## SCUM Walker ${{ github.ref_name }}
+
+            ### Installation / Installation
+            1. Download the installer for your system / Installer für dein System herunterladen
+            2. Start the app / App starten
+            3. Click "⬇ Hi-Res Tiles" in the app for high-resolution map / In der App auf "⬇ Hi-Res Tiles" klicken für hochauflösende Karte
+
+            ### Auto-Update / Automatisches Update
+            - Windows: Click "Update verfügbar" in the sidebar to automatically download and install / Klicke auf "Update verfügbar" in der Sidebar zum automatischen Download und Installation
+            - Linux/macOS: Click the link to open the release page / Klicke auf den Link um die Release-Seite zu öffnen
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
 
       - name: Build Tauri app (Linux/macOS - no release upload)
@@ -135,46 +146,11 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f | head -30
 
-      - name: Generate latest.json
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          TAG="${GITHUB_REF_NAME}"
-          BASE="https://github.com/HellBz/SCUM-Walker/releases/download/${TAG}"
-          
-          WIN_SIG=$(cat artifacts/*.exe.sig 2>/dev/null | head -1 || echo "")
-          WIN_EXE="SCUM.Walker_${VERSION}_x64-setup.exe"
-          
-          echo "Windows sig: $WIN_SIG"
-          echo "Windows exe: $WIN_EXE"
-          
-          PLATFORMS="\"windows-x86_64\":{\"signature\":\"$WIN_SIG\",\"url\":\"$BASE/$WIN_EXE\"}"
-          
-          PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          printf '{\n  "version": "%s",\n  "notes": "SCUM Walker %s",\n  "pub_date": "%s",\n  "platforms": {\n    %s\n  }\n}\n' "$VERSION" "$TAG" "$PUBDATE" "$PLATFORMS" > artifacts/latest.json
-          
-          cat artifacts/latest.json
-
-      - name: Create release (update body, add latest.json + tiles)
+      - name: Add Linux/macOS installers and tiles to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: 'SCUM Walker ${{ github.ref_name }}'
-          body: |
-            ## SCUM Walker ${{ github.ref_name }}
-
-            ### Installation / Installation
-            1. Download the installer for your system / Installer für dein System herunterladen
-            2. Start the app / App starten
-            3. Click "⬇ Hi-Res Tiles" in the app for high-resolution map / In der App auf "⬇ Hi-Res Tiles" klicken für hochauflösende Karte
-
-            ### Auto-Update / Automatisches Update
-            - Windows: Click "Update verfügbar" in the sidebar to automatically download and install / Klicke auf "Update verfügbar" in der Sidebar zum automatischen Download und Installation
-            - Linux/macOS: Click the link to open the release page / Klicke auf den Link um die Release-Seite zu öffnen
-          draft: false
-          prerelease: false
           files: |
-            artifacts/latest.json
             artifacts/build-ubuntu-22.04/*
             artifacts/build-macos-latest/*
             artifacts/tiles-hires/*
