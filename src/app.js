@@ -35,29 +35,13 @@ let data = { routes: [], current_route_id: null, pois: [] };
 let isRecording = false;
 let currentCoord = null;
 
-// World bounds in SCUM game coordinates (default, overridden by /api/bounds)
+// World bounds in SCUM game coordinates
 let worldMinX = -904800;
 let worldMaxX = 619318;
 let worldMinY = -904800;
 let worldMaxY = 618818;
 let worldWidth = worldMaxX - worldMinX;
 let worldHeight = worldMaxY - worldMinY;
-
-// Fetch live bounds from HTTP server
-async function fetchBounds() {
-  try {
-    const url = await invoke('get_livemap_url');
-    if (url) {
-      const base = new URL(url);
-      const r = await fetch(`${base.protocol}//${base.host}/api/bounds`);
-      const b = await r.json();
-      worldMinX = b.min_x; worldMaxX = b.max_x;
-      worldMinY = b.min_y; worldMaxY = b.max_y;
-      worldWidth = worldMaxX - worldMinX;
-      worldHeight = worldMaxY - worldMinY;
-    }
-  } catch {}
-}
 
 // Tile system: 256px tiles, zoom 0-6. Image upscaled to 16384x16384 (no padding).
 // Zoom 0-3 bundled, 4-6 via download. maxNativeZoom adjusts dynamically.
@@ -141,16 +125,17 @@ function populatePoiCategorySelect(current, fallback) {
   }
 }
 
-// Get HTTP server base URL for tiles
+// Livemap server URL (cached after first fetch)
+let livemapUrl = null;
 let tileBaseUrl = 'http://127.0.0.1:4488';
-async function fetchTileBaseUrl() {
+async function initLivemapUrl() {
   try {
-    const url = await invoke('get_livemap_url');
-    if (url) {
-      const u = new URL(url);
+    livemapUrl = await invoke('get_livemap_url');
+    if (livemapUrl) {
+      const u = new URL(livemapUrl);
       tileBaseUrl = `${u.protocol}//${u.host}`;
       const livemapUrlInput = document.getElementById('livemapUrl');
-      if (livemapUrlInput) livemapUrlInput.value = url;
+      if (livemapUrlInput) livemapUrlInput.value = livemapUrl;
     }
   } catch {}
 }
@@ -177,9 +162,7 @@ const map = L.map('map', {
 let tileLayer = null;
 
 async function initTileLayer() {
-  await fetchTileBaseUrl();
-  await fetchBounds();
-  setInterval(fetchBounds, 2000);
+  await initLivemapUrl();
   let maxNative = BUNDLED_MAX_ZOOM;
   try {
     const installed = await invoke('check_hires_tiles');
@@ -1459,18 +1442,8 @@ async function exportData(format) {
 document.getElementById('exportJson').addEventListener('click', () => exportData('json'));
 document.getElementById('exportCsv').addEventListener('click', () => exportData('csv'));
 
-// Update livemap URL display
-async function updateLivemapUrl() {
-  try {
-    const url = await invoke('get_livemap_url');
-    const input = document.getElementById('livemapUrl');
-    if (input) input.value = url;
-  } catch {}
-}
-
 loadData();
 checkScumStatus();
-updateLivemapUrl();
 checkVersion();
 
 async function checkVersion() {
@@ -1480,7 +1453,7 @@ async function checkVersion() {
     const update = await invoke('check_update');
     if (update && updateLink) {
       updateLink.textContent = 'Update ' + update.latest_version + ' verfügbar';
-      updateLink.style.display = 'inline-block';
+      updateLink.style.display = 'block';
       updateLink.addEventListener('click', async (e) => {
         e.preventDefault();
         try {

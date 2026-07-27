@@ -76,13 +76,13 @@ body {
 
 .update-link {
   display: none;
-  text-align: center;
+  width: fit-content;
   font-size: 11px;
   color: #121212;
   background: #00ffcc;
   border-radius: 4px;
   padding: 3px 8px;
-  margin: -8px 8px 10px;
+  margin: 4px auto 0;
   text-decoration: none;
   font-weight: 600;
   cursor: pointer;
