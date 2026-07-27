@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_updater::UpdaterExt;
 use tauri::webview::WebviewWindowBuilder;
 
 use crate::http_server::ws_broadcast;
@@ -741,33 +742,48 @@ fn get_version() -> String {
 }
 
 #[tauri::command]
-fn check_update() -> Result<Option<UpdateInfo>, String> {
+async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let response = client
-        .get(GITHUB_LATEST_RELEASE_URL)
-        .header("User-Agent", "scum-walker-tauri")
-        .send()
+    let updater = app.updater()
+        .map_err(|e| format!("Updater nicht verfügbar: {}", e))?;
+    let update = updater.check().await
         .map_err(|e| format!("Update-Check fehlgeschlagen: {}", e))?;
-    if !response.status().is_success() {
-        return Err(format!("GitHub API Fehler: {}", response.status()));
+    match update {
+        Some(update) => {
+            Ok(Some(UpdateInfo {
+                current_version: current,
+                latest_version: update.version.clone(),
+                url: GITHUB_LATEST_RELEASE_URL.to_string(),
+            }))
+        }
+        None => Ok(None),
     }
-    let text = response.text().map_err(|e| e.to_string())?;
-    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    let tag = json["tag_name"].as_str().ok_or("tag_name fehlt")?;
-    let url = json["html_url"].as_str().ok_or("html_url fehlt")?.to_string();
-    let latest = tag.trim_start_matches('v').to_string();
-    if version_greater(&latest, &current) {
-        Ok(Some(UpdateInfo {
-            current_version: current,
-            latest_version: latest,
-            url,
-        }))
-    } else {
-        Ok(None)
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater()
+        .map_err(|e| format!("Updater nicht verfügbar: {}", e))?;
+    let update = updater.check().await
+        .map_err(|e| format!("Update-Check fehlgeschlagen: {}", e))?;
+    match update {
+        Some(update) => {
+            let mut total_size: Option<u64> = None;
+            update.download_and_install(
+                move |chunk_length, content_length| {
+                    if let Some(total) = content_length {
+                        total_size = Some(total);
+                    }
+                    let _ = total_size;
+                    let _ = chunk_length;
+                },
+                || {},
+            ).await
+                .map_err(|e| format!("Update-Installation fehlgeschlagen: {}", e))?;
+            let _ = app.restart();
+            Ok(())
+        }
+        None => Err("Kein Update verfügbar".to_string()),
     }
 }
 
@@ -1387,6 +1403,7 @@ fn main() {
             export_data,
             get_version,
             check_update,
+            install_update,
             open_url,
             get_current_location,
             download_hires_tiles,

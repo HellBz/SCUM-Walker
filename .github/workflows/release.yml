@@ -51,20 +51,28 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Setting version to $VERSION"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
+          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
 
       - name: Install frontend deps
         run: npm ci
         continue-on-error: true
 
       - name: Build Tauri app
+        id: tauri-build
         uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: ${{ matrix.args }}
+
+      - name: Write latest.json (Windows only)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          echo '${{ steps.tauri-build.outputs.latestJson }}' > latest.json
+          cat latest.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -77,6 +85,7 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/app/*.app
+            latest.json
           if-no-files-found: ignore
 
   build-tiles:

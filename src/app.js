@@ -1456,10 +1456,17 @@ async function checkVersion() {
       updateLink.style.display = 'block';
       updateLink.addEventListener('click', async (e) => {
         e.preventDefault();
+        updateLink.textContent = 'Lade Update...';
+        updateLink.style.pointerEvents = 'none';
         try {
-          await invoke('open_url', { url: update.url });
+          await invoke('install_update');
         } catch (err) {
-          statusEl.textContent = 'Fehler beim Öffnen: ' + err;
+          updateLink.textContent = 'Update fehlgeschlagen';
+          statusEl.textContent = 'Update-Fehler: ' + err;
+          setTimeout(() => {
+            updateLink.textContent = 'Update ' + update.latest_version + ' verfügbar';
+            updateLink.style.pointerEvents = '';
+          }, 3000);
         }
       });
     }
