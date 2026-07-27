@@ -26,7 +26,6 @@
   if (isTauri) document.body.classList.add('tauri-mode');
 
   const closeBtn = document.getElementById('overlayClose');
-  const opacitySlider = document.getElementById('opacitySlider');
   const dragHandle = document.getElementById('dragHandle');
   const toggleCoordsBtn = document.getElementById('toggleCoords');
 
@@ -89,7 +88,10 @@
 
   let showCoords = safeGetStorage('overlay.showCoords', 'true') !== 'false';
   let followPlayer = safeGetStorage('livemap.follow', 'true') !== 'false';
+  const clusterKey = isTauri ? 'overlay.clustering' : 'livemap.clustering';
+  let useClustering = safeGetStorage(clusterKey, 'false') === 'true';
   const followBtn = document.getElementById('followBtn');
+  const toggleClusterBtn = document.getElementById('toggleCluster');
 
   function updateFollowButton() {
     if (followBtn) followBtn.classList.toggle('active', followPlayer);
@@ -114,6 +116,40 @@
     });
   }
 
+  function updateClusterButton() {
+    if (toggleClusterBtn) toggleClusterBtn.classList.toggle('active', useClustering);
+  }
+
+  function createPoiGroup() {
+    if (useClustering) {
+      return L.markerClusterGroup({
+        showCoverageOnHover: false,
+        maxClusterRadius: 50,
+        spiderfyOnMaxZoom: true,
+        disableClusteringAtZoom: MAX_ZOOM,
+        iconCreateFunction: function(cluster) {
+          return L.divIcon({
+            html: '<div class="cluster-count">' + cluster.getChildCount() + '</div>',
+            className: 'marker-cluster-icon',
+            iconSize: [34, 34],
+            iconAnchor: [17, 17]
+          });
+        }
+      });
+    }
+    return L.layerGroup();
+  }
+
+  if (toggleClusterBtn) {
+    toggleClusterBtn.addEventListener('click', () => {
+      useClustering = !useClustering;
+      safeSetStorage(clusterKey, String(useClustering));
+      updateClusterButton();
+      renderPois();
+    });
+  }
+  updateClusterButton();
+
   function updateCoordsVisibility() {
     if (!statusEl) return;
     statusEl.style.display = showCoords ? 'block' : 'none';
@@ -127,19 +163,6 @@
       safeSetStorage('overlay.showCoords', String(showCoords));
       toggleCoordsBtn.classList.toggle('active', showCoords);
       updateCoordsVisibility();
-    });
-  }
-
-  if (opacitySlider) {
-    const savedOpacity = safeGetStorage('overlay.opacity', null);
-    if (savedOpacity !== null) {
-      opacitySlider.value = savedOpacity;
-      document.body.style.opacity = (savedOpacity / 100).toString();
-    }
-    opacitySlider.addEventListener('input', () => {
-      const value = opacitySlider.value;
-      document.body.style.opacity = (value / 100).toString();
-      safeSetStorage('overlay.opacity', value);
     });
   }
 
@@ -231,6 +254,10 @@
   // Fit initial view to full map
   map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
 
+  // Dedicated pane for player marker so it renders above POI markers
+  map.createPane('liveMarkerPane');
+  map.getPane('liveMarkerPane').style.zIndex = '700';
+
   // Restore saved view
   const savedZoom = parseInt(safeGetStorage('livemap.leafletZoom', ''));
   const savedLat = parseFloat(safeGetStorage('livemap.leafletLat', ''));
@@ -270,7 +297,7 @@
 
   // Route layers
   let routeLayers = {};
-  let poiMarkers = [];
+  let poiClusterGroup = null;
   let liveMarker = null;
   let liveArrow = null;
   let livePulse = null;
@@ -285,8 +312,10 @@
   }
 
   function clearPois() {
-    poiMarkers.forEach(m => map.removeLayer(m));
-    poiMarkers = [];
+    if (poiClusterGroup) {
+      map.removeLayer(poiClusterGroup);
+      poiClusterGroup = null;
+    }
   }
 
   function clearLiveMarker() {
@@ -530,15 +559,18 @@
     clearPois();
     if (!data.pois) return;
     const hidden = data.hidden_categories || [];
+    poiClusterGroup = createPoiGroup();
     data.pois.filter(poi => !hidden.includes(poi.category || 'Unkategorisiert')).forEach(poi => {
       const ll = gameToLatLng(poi.x, poi.y);
-      const marker = L.circleMarker(ll, {
-        radius: 6,
-        fillColor: poi.color || '#ff44d3',
-        color: '#fff',
-        weight: 1,
-        fillOpacity: 1,
-      }).addTo(map);
+      const color = poi.color || '#ff44d3';
+      const marker = L.marker(ll, {
+        icon: L.divIcon({
+          html: '<div class="poi-dot" style="background:' + color + '"></div>',
+          className: 'poi-marker',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        })
+      });
       if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
 
       if (poi.image_path) {
@@ -546,7 +578,7 @@
         let hoverBound = false;
         marker.on('mouseover', () => {
           if (!hoverBound) {
-            marker.bindPopup(`<img src="${imgUrl}" style="max-width:200px;max-height:150px;border-radius:4px">`, { maxWidth: 250, closeButton: false, autoPan: false });
+            marker.bindPopup('<img src="' + imgUrl + '" style="max-width:200px;max-height:150px;border-radius:4px">', { maxWidth: 250, closeButton: false, autoPan: false });
             hoverBound = true;
           }
           marker.openPopup();
@@ -564,8 +596,9 @@
         });
       }
 
-      poiMarkers.push(marker);
+      poiClusterGroup.addLayer(marker);
     });
+    map.addLayer(poiClusterGroup);
   }
 
   function renderLiveMarker() {
@@ -604,6 +637,7 @@
           iconAnchor: [20, 20],
         }),
         interactive: false,
+        pane: 'liveMarkerPane',
       }).addTo(map);
     }
   }
@@ -621,39 +655,21 @@
   map.on('dragstart', disableFollow);
 
   function handleWsMessage(msg) {
-    const payload = JSON.parse(msg);
-    switch (payload.type) {
+    const raw = JSON.parse(msg);
+    const type = Array.isArray(raw) ? raw[0] : (raw && raw.type);
+    const msgData = Array.isArray(raw) ? raw[1] : undefined;
+    switch (type) {
       case 'login-success': {
-        // Full settings received after login handshake
-        const newData = payload.data || { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
-        if (!newData.hidden_categories) newData.hidden_categories = [];
-        const newPos = payload.current_position || null;
-        if (payload.bounds) applyBounds(payload.bounds);
-        if (payload.has_hires_tiles !== undefined) initTileLayer(payload.has_hires_tiles);
-        const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
-        const currentRouteChanged = newData.current_route_id !== data.current_route_id;
-        const poisChanged = JSON.stringify(newData.pois) !== JSON.stringify(data.pois);
-        const hiddenChanged = JSON.stringify(newData.hidden_categories) !== JSON.stringify(data.hidden_categories || []);
-        const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
-        data = newData;
-        currentPos = newPos;
-        if (routesChanged || currentRouteChanged) renderRoutes();
-        if (poisChanged || hiddenChanged) renderPois();
-        if (posChanged) renderLiveMarker();
-        if (payload.poi_connections) {
-          connectedPoiIds = new Set(payload.poi_connections);
-          if (connectedPoiIds.size > 0) renderConnectionLine();
-        }
-        lastPoiCount = (data.pois || []).length;
+        const info = msgData || raw;
+        if (info.bounds) applyBounds(info.bounds);
+        if (info.has_hires_tiles !== undefined) initTileLayer(info.has_hires_tiles);
         connected = true;
-        statusEl.textContent = currentPos
-          ? `Verbunden — X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`
-          : 'Verbunden — Keine Position';
+        statusEl.textContent = 'Verbunden — Initialisiere...';
         if (followPlayer && currentPos) centerOnCurrentPos();
         break;
       }
       case 'coord-update': {
-        const newPos = payload.data;
+        const newPos = msgData;
         const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
         currentPos = newPos;
         if (posChanged) {
@@ -674,7 +690,7 @@
         break;
       }
       case 'data-updated': {
-        const newData = payload.data || { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
+        const newData = msgData || { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
         if (!newData.hidden_categories) newData.hidden_categories = [];
         const routesChanged = JSON.stringify(newData.routes) !== JSON.stringify(data.routes);
         const currentRouteChanged = newData.current_route_id !== data.current_route_id;
@@ -691,23 +707,19 @@
         break;
       }
       case 'poi-created': {
-        showToast('📍 POI erstellt: ' + payload.label);
-        break;
-      }
-      case 'chat-paused': {
-        if (payload.value) {
-          showToast('⏸ Chat offen – Tracking pausiert');
-        }
+        const info = msgData || raw;
+        showToast('📍 POI erstellt: ' + (info.label || ''));
         break;
       }
       case 'scum-status': {
-        if (!payload.value) {
+        if (!msgData) {
           statusEl.textContent = 'SCUM nicht gestartet';
         }
         break;
       }
       case 'bounds-updated': {
-        if (payload.bounds) applyBounds(payload.bounds);
+        const info = msgData || raw;
+        if (info.bounds) applyBounds(info.bounds);
         if (currentPos) renderLiveMarker();
         renderRoutes();
         renderPois();
@@ -723,7 +735,7 @@
         break;
       }
       case 'tracking-state': {
-        if (payload.recording) {
+        if (msgData && msgData.recording) {
           showToast('🔴 Aufnahme gestartet');
         }
         break;
@@ -732,17 +744,19 @@
         break;
       }
       case 'poi-connect': {
-        connectedPoiIds.add(payload.poiId);
+        const info = msgData || raw;
+        connectedPoiIds.add(info.poiId);
         renderConnectionLine();
         break;
       }
       case 'poi-disconnect': {
-        connectedPoiIds.delete(payload.poiId);
+        const info = msgData || raw;
+        connectedPoiIds.delete(info.poiId);
         renderConnectionLine();
         break;
       }
       case 'poi-connections': {
-        connectedPoiIds = new Set(payload.ids || []);
+        connectedPoiIds = new Set(Array.isArray(msgData) ? msgData : (msgData && msgData.ids ? msgData.ids : []));
         renderConnectionLine();
         break;
       }
@@ -752,7 +766,8 @@
   let pingInterval = null;
 
   function connectWs() {
-    const wsPort = window.__WS_PORT__ || '4489';
+    let wsPort = window.__WS_PORT__ || window.location.port || '4488';
+    if (!/^\d+$/.test(wsPort)) wsPort = window.location.port || '4488';
     const host = window.location.hostname || 'localhost';
     const wsUrl = 'ws://' + host + ':' + wsPort + '/ws';
     let ws;

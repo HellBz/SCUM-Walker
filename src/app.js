@@ -18,6 +18,8 @@ const imageDialogTitle = document.getElementById('imageDialogTitle');
 const poiCategorySelect = document.getElementById('poiCategorySelect');
 const poiCategoryInput = document.getElementById('poiCategoryInput');
 const poiCategoryFilter = document.getElementById('poiCategoryFilter');
+const versionBadge = document.getElementById('versionBadge');
+const updateLink = document.getElementById('updateLink');
 
 const ROUTE_COLORS = ['#00ffcc', '#ff8800', '#4488ff', '#ff44d3', '#ffee00', '#44cc44', '#ff4444', '#ffffff'];
 const POI_COLORS = ['#ff44d3', '#ff8800', '#44cc44', '#4488ff', '#ffee00', '#ff4444', '#ffffff'];
@@ -27,6 +29,7 @@ let selectedPoiCategory = '';
 let hiddenPoiCategories = new Set();
 let pendingPoi = null;
 let editingPoiId = null;
+let useClustering = safeGetStorage('mainmap.clustering', 'false') === 'true';
 
 let data = { routes: [], current_route_id: null, pois: [] };
 let isRecording = false;
@@ -204,6 +207,10 @@ initTileLayer();
 map.setMaxBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
 map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
 
+// Dedicated pane for player marker so it renders above POI markers
+map.createPane('liveMarkerPane');
+map.getPane('liveMarkerPane').style.zIndex = '700';
+
 // Restore saved view
 const savedZoom = parseInt(safeGetStorage('mainmap.leafletZoom', ''));
 const savedLat = parseFloat(safeGetStorage('mainmap.leafletLat', ''));
@@ -222,6 +229,7 @@ map.on('zoomend moveend', () => {
 // Follow / Center / Fit (floating map controls)
 let followEnabled = false;
 const mapZoomLabel = document.getElementById('mapZoomLabel');
+const mapClusterToggle = document.getElementById('mapClusterToggle');
 function updateMapZoomLabel() {
   if (mapZoomLabel) {
     const z = map.getZoom();
@@ -262,13 +270,36 @@ document.getElementById('mapFitBtn').addEventListener('click', () => {
 // Leaflet layers for routes, POIs, live marker
 let routeLayers = {};
 let routeEndMarkers = {};
-let poiMarkers = [];
+let poiClusterGroup = null;
 let liveMarker = null;
 let liveArrow = null;
 let livePulse = null;
 let connectionLines = [];
 let connectionLabels = [];
 let connectedPoiIds = new Set();
+
+async function syncPoiConnections() {
+  try {
+    const ids = await invoke('get_poi_connections');
+    connectedPoiIds = new Set(Array.isArray(ids) ? ids : []);
+    updateUI();
+  } catch (err) {
+    console.error('POI-Verbindungen laden fehlgeschlagen:', err);
+  }
+}
+
+async function syncPlayerPosition() {
+  try {
+    const pos = await invoke('get_player_position');
+    if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+      currentCoord = pos;
+      const ll = gameToLatLng(currentCoord.x, currentCoord.y);
+      updateLiveMarker(ll);
+    }
+  } catch (err) {
+    console.error('Spielerposition laden fehlgeschlagen:', err);
+  }
+}
 
 function clearRoutes() {
   Object.values(routeLayers).forEach(l => map.removeLayer(l));
@@ -278,8 +309,10 @@ function clearRoutes() {
 }
 
 function clearPois() {
-  poiMarkers.forEach(m => map.removeLayer(m));
-  poiMarkers = [];
+  if (poiClusterGroup) {
+    map.removeLayer(poiClusterGroup);
+    poiClusterGroup = null;
+  }
 }
 
 function clearLiveMarker() {
@@ -304,10 +337,11 @@ function lerpSeg(a, b, t) {
 function captureLineState() {
   const state = {};
   Object.entries(connectionLayersByPoi).forEach(([id, entry]) => {
+    const label = entry.label ? entry.label.getLatLng() : null;
     state[id] = {
       seg1: entry.seg1 ? entry.seg1.getLatLngs().map(l => [l.lat, l.lng]) : null,
       seg2: entry.seg2 ? entry.seg2.getLatLngs().map(l => [l.lat, l.lng]) : null,
-      label: entry.label ? entry.label.getLatLng() : null,
+      label: label ? [label.lat, label.lng] : null,
     };
   });
   return state;
@@ -536,15 +570,12 @@ function broadcastPoiConnection() {
   } catch (e) {}
 }
 
-let connectionUpdatePending = false;
 function updateConnectionLines() {
-  if (connectionUpdatePending) return;
-  connectionUpdatePending = true;
-  requestAnimationFrame(() => {
-    connectionUpdatePending = false;
-    if (connectedPoiIds.size === 0) return;
-    renderConnectionLine();
-  });
+  if (connectedPoiIds.size === 0) {
+    clearConnectionLine();
+    return;
+  }
+  renderConnectionLine();
 }
 
 async function wsBroadcast(msg) {
@@ -586,21 +617,48 @@ function renderRoutes() {
   });
 }
 
+function createPoiGroup() {
+  if (useClustering) {
+    return L.markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      disableClusteringAtZoom: MAX_ZOOM,
+      iconCreateFunction: function(cluster) {
+        return L.divIcon({
+          html: '<div class="cluster-count">' + cluster.getChildCount() + '</div>',
+          className: 'marker-cluster-icon',
+          iconSize: [34, 34],
+          iconAnchor: [17, 17]
+        });
+      }
+    });
+  }
+  return L.layerGroup();
+}
+
+function updateClusterButton() {
+  if (mapClusterToggle) mapClusterToggle.classList.toggle('active', useClustering);
+}
+
 function renderPois() {
   clearPois();
   const filter = poiCategoryFilter ? poiCategoryFilter.value : '';
+  poiClusterGroup = createPoiGroup();
   data.pois
     .filter(poi => !filter || poi.category === filter)
     .filter(poi => !hiddenPoiCategories.has(poi.category || 'Unkategorisiert'))
     .forEach(poi => {
     const ll = gameToLatLng(poi.x, poi.y);
-    const marker = L.circleMarker(ll, {
-      radius: 6,
-      fillColor: poi.color,
-      color: '#fff',
-      weight: 1,
-      fillOpacity: 1,
-    }).addTo(map);
+    const color = poi.color || '#ff44d3';
+    const marker = L.marker(ll, {
+      icon: L.divIcon({
+        html: '<div class="poi-dot" style="background:' + color + '"></div>',
+        className: 'poi-marker',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+      })
+    });
     if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
 
     if (poi.image_path) {
@@ -609,7 +667,7 @@ function renderPois() {
         if (!hoverPopupBound) {
           try {
             const base64 = await invoke('get_poi_image_base64', { id: poi.id });
-            marker.bindPopup(`<img src="data:image/png;base64,${base64}" style="max-width:200px;max-height:150px;border-radius:4px">`, { maxWidth: 250, closeButton: false, autoPan: false });
+            marker.bindPopup('<img src="data:image/png;base64,' + base64 + '" style="max-width:200px;max-height:150px;border-radius:4px">', { maxWidth: 250, closeButton: false, autoPan: false });
             hoverPopupBound = true;
           } catch (err) {}
         }
@@ -628,7 +686,18 @@ function renderPois() {
       });
     }
 
-    poiMarkers.push(marker);
+    poiClusterGroup.addLayer(marker);
+  });
+  if (poiClusterGroup) map.addLayer(poiClusterGroup);
+}
+
+updateClusterButton();
+if (mapClusterToggle) {
+  mapClusterToggle.addEventListener('click', () => {
+    useClustering = !useClustering;
+    safeSetStorage('mainmap.clustering', String(useClustering));
+    updateClusterButton();
+    renderPois();
   });
 }
 
@@ -668,6 +737,7 @@ function updateLiveMarker(ll) {
         iconAnchor: [20, 20],
       }),
       interactive: false,
+      pane: 'liveMarkerPane',
     }).addTo(map);
   }
 }
@@ -692,7 +762,10 @@ async function loadData() {
     syncHiddenPoiCategories();
     await syncRecordingState();
     await syncLiveTrackingState();
+    await syncPoiConnections();
+    await syncPlayerPosition();
     updateUI();
+    updateConnectionLines();
   } catch (err) {
     statusEl.textContent = 'Fehler beim Laden: ' + err;
   }
@@ -1329,12 +1402,6 @@ if (window.__TAURI__.event) {
     }
   });
 
-  window.__TAURI__.event.listen('chat-paused', (event) => {
-    const chatPausedEl = document.getElementById('chatPausedStatus');
-    if (chatPausedEl) {
-      chatPausedEl.style.display = event.payload ? 'block' : 'none';
-    }
-  });
 
   window.__TAURI__.event.listen('data-updated', (event) => {
     data = event.payload;
@@ -1343,6 +1410,18 @@ if (window.__TAURI__.event) {
     if (!data.hidden_categories) data.hidden_categories = [];
     syncHiddenPoiCategories();
     updateUI();
+  });
+
+  window.__TAURI__.event.listen('poi-connections', (event) => {
+    let ids = event.payload;
+    if (Array.isArray(ids) && ids.length >= 2 && typeof ids[0] === 'string') {
+      ids = ids[1];
+    }
+    if (Array.isArray(ids)) {
+      connectedPoiIds = new Set(ids);
+      updateConnectionLines();
+      updateUI();
+    }
   });
 
   window.__TAURI__.event.listen('hotkey-poi-created', (event) => {
@@ -1392,3 +1471,24 @@ async function updateLivemapUrl() {
 loadData();
 checkScumStatus();
 updateLivemapUrl();
+checkVersion();
+
+async function checkVersion() {
+  try {
+    const version = await invoke('get_version');
+    if (versionBadge) versionBadge.textContent = 'v' + version;
+    const update = await invoke('check_update');
+    if (update && updateLink) {
+      updateLink.textContent = 'Update ' + update.latest_version + ' verfügbar';
+      updateLink.style.display = 'inline-block';
+      updateLink.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+          await invoke('open_url', { url: update.url });
+        } catch (err) {
+          statusEl.textContent = 'Fehler beim Öffnen: ' + err;
+        }
+      });
+    }
+  } catch {}
+}

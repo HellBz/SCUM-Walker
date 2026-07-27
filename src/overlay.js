@@ -38,28 +38,19 @@ if (opacitySlider && mapFrame) {
     const value = opacitySlider.value;
     applyOpacity(value);
     safeSetStorage('overlay.opacity', value);
-    saveOverlayState();
   });
 }
 
 async function saveOverlayState() {
   try {
-    const size = await currentWindow.innerSize();
-    const pos = await currentWindow.outerPosition();
-    const opacity = parseFloat(safeGetStorage('overlay.opacity', '85'));
-    await invoke('save_overlay_config', {
-      config: {
-        x: pos.x,
-        y: pos.y,
-        width: size.width,
-        height: size.height,
-        opacity
-      }
-    });
+    await invoke('save_overlay_state');
   } catch (err) {
     console.error(err);
   }
 }
+
+currentWindow.listen('tauri://resize', () => saveOverlayState());
+currentWindow.listen('tauri://move', () => saveOverlayState());
 
 closeBtn.addEventListener('click', async () => {
   await saveOverlayState();

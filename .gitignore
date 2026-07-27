@@ -19,3 +19,6 @@ src/tiles/
 
 # Export files
 src-tauri/scum-walker-export.*
+
+# Signing keys (private key must not be committed)
+src-tauri/keys/

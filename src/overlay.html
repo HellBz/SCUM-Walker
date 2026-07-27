@@ -41,7 +41,31 @@
     }
     #bar span { font-weight: bold; color: #00ffcc; margin-right: 6px; pointer-events: none; }
     #bar .controls { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; app-region: no-drag; }
-    #bar input[type="range"] { width: 70px; height: 14px; }
+    #opacitySlider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 70px;
+      height: 4px;
+      background: #555;
+      border-radius: 2px;
+      outline: none;
+    }
+    #opacitySlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #00ffcc;
+      cursor: pointer;
+    }
+    #opacitySlider::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border: none;
+      border-radius: 50%;
+      background: #00ffcc;
+      cursor: pointer;
+    }
     #bar button {
       background: transparent;
       border: 1px solid #555;

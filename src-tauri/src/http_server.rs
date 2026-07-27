@@ -1,29 +1,33 @@
+use axum::{
+    body::Body,
+    extract::{Path, State, WebSocketUpgrade},
+    http::{header},
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
+use axum::extract::ws::{Message, WebSocket};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
-use std::sync::mpsc;
-use tiny_http::{Header, Method, Response, Server};
-use tungstenite::accept;
-
-use crate::{AppState, CoordRecord};
-
-#[derive(Serialize)]
-struct LiveMapData {
-    data: crate::AppData,
-    current_position: Option<CoordRecord>,
-}
+use tokio::sync::broadcast;
+use crate::AppState;
 
 const LIVEMAP_HTML: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.html"));
 const LIVEMAP_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.css"));
 const LIVEMAP_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.js"));
 const LEAFLET_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.css"));
 const LEAFLET_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.js"));
+const MARKERCLUSTER_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/MarkerCluster.css"));
+const MARKERCLUSTER_DEFAULT_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/MarkerCluster.Default.css"));
+const MARKERCLUSTER_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.markercluster.js"));
 const FAVICON_PNG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/favicon.png"));
 
 pub static HTTP_PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
 pub static WS_PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
 pub static TILES_DIR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-pub static WS_BROADCAST: std::sync::OnceLock<mpsc::Sender<String>> = std::sync::OnceLock::new();
+pub static WS_BROADCAST: std::sync::OnceLock<broadcast::Sender<String>> = std::sync::OnceLock::new();
 
 pub fn ws_broadcast(msg: String) {
     if let Some(tx) = WS_BROADCAST.get() {
@@ -47,289 +51,254 @@ impl Default for WorldBounds {
 
 pub static WORLD_BOUNDS: std::sync::RwLock<WorldBounds> = std::sync::RwLock::new(WorldBounds { min_x: -904800.0, max_x: 619318.0, min_y: -904800.0, max_y: 618818.0 });
 
-fn text_response(body: &str, content_type: &str) -> Response<std::io::Cursor<Vec<u8>>> {
-    Response::from_string(body)
-        .with_header(Header::from_bytes("Content-Type".as_bytes(), content_type.as_bytes()).unwrap())
-        .with_header(cors_header())
+fn text_response(body: &'static str, content_type: &'static str) -> Response {
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from(body))
+        .unwrap()
 }
 
-fn bytes_response(body: &[u8], content_type: &str) -> Response<std::io::Cursor<Vec<u8>>> {
-    Response::from_data(body.to_vec())
-        .with_header(Header::from_bytes("Content-Type".as_bytes(), content_type.as_bytes()).unwrap())
-        .with_header(cors_header())
+fn bytes_response(body: &'static [u8], content_type: &'static str) -> Response {
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from(body.to_vec()))
+        .unwrap()
 }
 
-fn cors_header() -> Header {
-    Header::from_bytes("Access-Control-Allow-Origin".as_bytes(), "*".as_bytes()).unwrap()
+fn json_response<T: Serialize>(value: T) -> Response {
+    let body = serde_json::to_string(&value).unwrap_or_default();
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+fn not_found() -> Response {
+    Response::builder()
+        .status(404)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from("Not Found"))
+        .unwrap()
 }
 
 pub fn start_http_server(state: Arc<AppState>, tiles_dir: String) {
-    // Create broadcast channel for WebSocket events
-    let (ws_tx, ws_rx) = mpsc::channel::<String>();
-    let _ = WS_BROADCAST.set(ws_tx);
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        rt.block_on(run_server(state, tiles_dir));
+    });
+}
 
-    // Start WebSocket server
-    let ws_state = state.clone();
-    {
-        let mut port = 4489u16;
-        let listener = {
-            let mut l = None;
-            for p in 4489..=4500 {
-                match std::net::TcpListener::bind(format!("0.0.0.0:{}", p)) {
-                    Ok(listener) => {
-                        eprintln!("[ws_server] WebSocket lauscht auf Port {}", p);
-                        port = p;
-                        l = Some(listener);
-                        break;
-                    }
-                    Err(e) => {
-                        eprintln!("[ws_server] Port {} fehlgeschlagen: {}", p, e);
-                    }
+async fn run_server(state: Arc<AppState>, tiles_dir: String) {
+    let (tx, _rx) = broadcast::channel::<String>(256);
+    let _ = WS_BROADCAST.set(tx);
+    let _ = TILES_DIR.set(tiles_dir);
+
+    let app = Router::new()
+        .route("/", get(livemap_handler))
+        .route("/livemap", get(livemap_handler))
+        .route("/livemap.html", get(livemap_handler))
+        .route("/livemap.css", get(livemap_css_handler))
+        .route("/livemap.js", get(livemap_js_handler))
+        .route("/lib/leaflet.css", get(leaflet_css_handler))
+        .route("/lib/leaflet.js", get(leaflet_js_handler))
+        .route("/lib/MarkerCluster.css", get(markercluster_css_handler))
+        .route("/lib/MarkerCluster.Default.css", get(markercluster_default_css_handler))
+        .route("/lib/leaflet.markercluster.js", get(markercluster_js_handler))
+        .route("/favicon.png", get(favicon_handler))
+        .route("/api/bounds", get(get_bounds).post(post_bounds))
+        .route("/api/poi_image/:id", get(poi_image_handler))
+        .route("/tiles/:z/:x/:y", get(tile_handler))
+        .route("/ws", get(ws_handler))
+        .with_state(state);
+
+    let ports: Vec<u16> = (0..=10).map(|i| 4488 + i * 10).chain(std::iter::once(80)).collect();
+    for port in ports {
+        let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                eprintln!("[http_server] Lauscht auf {}", addr);
+                let _ = HTTP_PORT.set(port);
+                let _ = WS_PORT.set(port);
+                if let Err(e) = axum::serve(listener, app).await {
+                    eprintln!("[http_server] Server-Fehler: {}", e);
                 }
+                return;
             }
-            match l {
-                Some(l) => l,
-                None => {
-                    eprintln!("[ws_server] FEHLER: WebSocket Server konnte nicht gestartet werden");
-                    return;
-                }
+            Err(e) => {
+                eprintln!("[http_server] Konnte Port {} nicht binden: {}", port, e);
             }
-        };
-        let _ = WS_PORT.set(port);
+        }
+    }
+    eprintln!("[http_server] Kein Port verfügbar");
+}
 
-        thread::spawn(move || {
-            let clients: Arc<std::sync::Mutex<Vec<mpsc::Sender<String>>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+async fn livemap_handler() -> Response {
+    let port = HTTP_PORT.get().copied().unwrap_or(4488);
+    let html = LIVEMAP_HTML.replace("{{WS_PORT}}", &port.to_string());
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from(html))
+        .unwrap()
+}
 
-            // Broadcast thread
-            {
-                let clients = clients.clone();
-                thread::spawn(move || {
-                    while let Ok(msg) = ws_rx.recv() {
-                        let mut to_remove = Vec::new();
-                        let clients_lock = clients.lock().unwrap();
-                        for (i, client_tx) in clients_lock.iter().enumerate() {
-                            if client_tx.send(msg.clone()).is_err() {
-                                to_remove.push(i);
-                            }
-                        }
-                        drop(clients_lock);
-                        if !to_remove.is_empty() {
-                            let mut clients_lock = clients.lock().unwrap();
-                            for i in to_remove.iter().rev() {
-                                clients_lock.swap_remove(*i);
-                            }
-                        }
-                    }
-                });
-            }
+async fn livemap_css_handler() -> Response { text_response(LIVEMAP_CSS, "text/css; charset=utf-8") }
+async fn livemap_js_handler() -> Response { text_response(LIVEMAP_JS, "application/javascript; charset=utf-8") }
+async fn leaflet_css_handler() -> Response { text_response(LEAFLET_CSS, "text/css; charset=utf-8") }
+async fn leaflet_js_handler() -> Response { text_response(LEAFLET_JS, "application/javascript; charset=utf-8") }
+async fn markercluster_css_handler() -> Response { text_response(MARKERCLUSTER_CSS, "text/css; charset=utf-8") }
+async fn markercluster_default_css_handler() -> Response { text_response(MARKERCLUSTER_DEFAULT_CSS, "text/css; charset=utf-8") }
+async fn markercluster_js_handler() -> Response { text_response(MARKERCLUSTER_JS, "application/javascript; charset=utf-8") }
+async fn favicon_handler() -> Response { bytes_response(FAVICON_PNG, "image/png") }
 
-            // Accept connections
-            for stream in listener.incoming() {
-                if let Ok(stream) = stream {
-                    let (client_tx, client_rx) = mpsc::channel::<String>();
-                    clients.lock().unwrap().push(client_tx);
+async fn get_bounds() -> Response {
+    let bounds = WORLD_BOUNDS.read().unwrap().clone();
+    json_response(bounds)
+}
 
-                    let state = ws_state.clone();
-                    thread::spawn(move || {
-                        match accept(stream) {
-                            Ok(mut ws) => {
-                                // Single thread per connection: alternate between
-                                // checking broadcast channel and reading from socket.
-                                // Set read timeout so read() doesn't block forever.
-                                let _ = ws.get_ref().set_read_timeout(Some(std::time::Duration::from_millis(100)));
+async fn post_bounds(State(_state): State<Arc<AppState>>, axum::Json(new_bounds): axum::Json<WorldBounds>) -> Response {
+    *WORLD_BOUNDS.write().unwrap() = new_bounds.clone();
+    eprintln!("[http_server] World Bounds aktualisiert: {:?}", new_bounds);
+    ws_broadcast(serde_json::json!(["bounds-updated", new_bounds]).to_string());
+    json_response(serde_json::json!({"status": "ok"}))
+}
 
-                                loop {
-                                    // 1. Check for broadcast messages (non-blocking)
-                                    match client_rx.recv_timeout(std::time::Duration::from_millis(50)) {
-                                        Ok(msg) => {
-                                            if ws.send(tungstenite::Message::Text(msg)).is_err() {
-                                                break;
-                                            }
-                                        }
-                                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                                            // No broadcast, send WebSocket ping to keep alive
-                                            if ws.send(tungstenite::Message::Ping(Vec::new())).is_err() {
-                                                break;
-                                            }
-                                        }
-                                        Err(mpsc::RecvTimeoutError::Disconnected) => {
-                                            break;
-                                        }
-                                    }
+async fn poi_image_handler(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> Response {
+    let filename = {
+        let data = state.data.lock().unwrap();
+        data.pois.iter().find(|p| p.id == id).and_then(|p| p.image_path.clone())
+    };
+    if let Some(filename) = filename {
+        let dir = state.data_path.parent().unwrap_or(&state.data_path).join("poi_images");
+        let path = dir.join(&filename);
+        match tokio::fs::read(&path).await {
+            Ok(bytes) => Response::builder()
+                .status(200)
+                .header(header::CONTENT_TYPE, "image/png")
+                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(Body::from(bytes))
+                .unwrap(),
+            Err(_) => not_found(),
+        }
+    } else {
+        not_found()
+    }
+}
 
-                                    // 2. Try to read incoming messages (times out after 100ms)
-                                    match ws.read() {
-                                        Ok(msg) => {
-                                            match msg {
-                                                tungstenite::Message::Text(text) => {
-                                                    if text.contains("\"ping\"") {
-                                                        let _ = ws.send(tungstenite::Message::Text(
-                                                            serde_json::json!({"type": "pong"}).to_string()
-                                                        ));
-                                                    } else if text.contains("\"login\"") {
-                                                        let bounds = WORLD_BOUNDS.read().unwrap().clone();
-                                                        let tiles_dir = TILES_DIR.get().map(|s| s.as_str()).unwrap_or(".");
-                                                        let has_hires = std::path::Path::new(tiles_dir).join("4").join("0").join("0.png").exists();
-                                                        let login_resp = serde_json::json!({
-                                                            "type": "login-success",
-                                                            "data": state.app_data(),
-                                                            "current_position": state.current_position(),
-                                                            "bounds": bounds,
-                                                            "has_hires_tiles": has_hires,
-                                                            "poi_connections": state.poi_connections.lock().unwrap().clone(),
-                                                        }).to_string();
-                                                        let _ = ws.send(tungstenite::Message::Text(login_resp));
-                                                        eprintln!("[ws_server] Client login erfolgreich");
-                                                    }
-                                                }
-                                                tungstenite::Message::Close(_) => break,
-                                                _ => {}
-                                            }
-                                        }
-                                        Err(tungstenite::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
-                                            // Normal timeout, continue loop
-                                        }
-                                        Err(_) => break,
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("[ws_server] Verbindung fehlgeschlagen: {}", e);
-                            }
-                        }
-                    });
-                }
-            }
-        });
+async fn tile_handler(Path((z, x, y)): Path<(u32, u32, String)>) -> Response {
+    let y = y.strip_suffix(".png")
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    let tiles_dir = TILES_DIR.get().map(|s| s.as_str()).unwrap_or(".");
+    let path = PathBuf::from(tiles_dir)
+        .join(z.to_string())
+        .join(x.to_string())
+        .join(format!("{}.png", y));
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => Response::builder()
+            .status(200)
+            .header(header::CONTENT_TYPE, "image/png")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(Body::from(bytes))
+            .unwrap(),
+        Err(_) => not_found(),
+    }
+}
+
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+    let tx = match WS_BROADCAST.get() {
+        Some(tx) => tx.clone(),
+        None => return,
     };
 
-    // HTTP server (static files)
-    thread::spawn(move || {
-        let mut chosen_port = 4488u16;
-        let server = {
-            let mut s = None;
-            let ports: Vec<u16> = (0..=10).map(|i| 4488 + i * 10).chain(std::iter::once(80)).collect();
-            for port in ports {
-                match Server::http(format!("0.0.0.0:{}", port)) {
-                    Ok(server) => {
-                        eprintln!("[http_server] Server lauscht auf Port {}", port);
-                        s = Some(server);
-                        chosen_port = port;
-                        break;
-                    }
-                    Err(e) => {
-                        eprintln!("[http_server] Port {} fehlgeschlagen: {}", port, e);
-                    }
+    // Wait for the client to send a login message before pushing data
+    let mut logged_in = false;
+    while let Some(msg) = socket.recv().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                if text.contains("\"login\"") {
+                    logged_in = true;
+                    break;
+                } else if text.contains("\"ping\"") {
+                    let _ = socket.send(Message::Text(
+                        serde_json::json!(["pong", null]).to_string()
+                    )).await;
                 }
             }
-            match s {
-                Some(server) => server,
-                None => {
-                    eprintln!("[http_server] FEHLER: Live-Map Server konnte nicht gestartet werden");
-                    return;
-                }
-            }
-        };
-        let _ = HTTP_PORT.set(chosen_port);
-        let _ = TILES_DIR.set(tiles_dir);
-
-        for mut request in server.incoming_requests() {
-            let path = request.url().split('?').next().unwrap_or("/");
-            let response = match (request.method(), path) {
-                (&Method::Get, "/" | "/livemap" | "/livemap.html") => {
-                    let ws_port = WS_PORT.get().map(|p| *p).unwrap_or(4489);
-                    let html = LIVEMAP_HTML.replace("__WS_PORT__", &ws_port.to_string());
-                    let html = html.replace("__HTTP_PORT__", &chosen_port.to_string());
-                    text_response(&html, "text/html; charset=utf-8")
-                }
-                (&Method::Get, "/livemap.css") => text_response(LIVEMAP_CSS, "text/css"),
-                (&Method::Get, "/livemap.js") => text_response(LIVEMAP_JS, "application/javascript"),
-                (&Method::Get, "/lib/leaflet.css") => text_response(LEAFLET_CSS, "text/css"),
-                (&Method::Get, "/lib/leaflet.js") => text_response(LEAFLET_JS, "application/javascript"),
-                (&Method::Get, "/favicon.png") => bytes_response(FAVICON_PNG, "image/png"),
-                (&Method::Get, path) if path.starts_with("/tiles/") => {
-                    // Serve tile: /tiles/{z}/{x}/{y}.png
-                    let parts: Vec<&str> = path.strip_prefix("/tiles/").unwrap().split('/').collect();
-                    if parts.len() == 3 && parts[2].ends_with(".png") {
-                        let tile_path = std::path::Path::new(TILES_DIR.get().map(|s| s.as_str()).unwrap_or("."))
-                            .join(parts[0])
-                            .join(parts[1])
-                            .join(parts[2]);
-                        match std::fs::read(&tile_path) {
-                            Ok(data) => bytes_response(&data, "image/png"),
-                            Err(_) => Response::from_string("Not Found")
-                                .with_status_code(404)
-                                .with_header(cors_header()),
-                        }
-                    } else {
-                        Response::from_string("Not Found")
-                            .with_status_code(404)
-                            .with_header(cors_header())
-                    }
-                }
-                (&Method::Get, "/api/bounds") => {
-                    let bounds = WORLD_BOUNDS.read().unwrap();
-                    match serde_json::to_string(&*bounds) {
-                        Ok(json) => text_response(&json, "application/json"),
-                        Err(e) => Response::from_string(format!("{{\"error\":\"{}\"}}", e))
-                            .with_status_code(500)
-                            .with_header(cors_header()),
-                    }
-                }
-                (&Method::Post, "/api/bounds") => {
-                    let mut body = String::new();
-                    let _ = request.as_reader().read_to_string(&mut body);
-                    match serde_json::from_str::<WorldBounds>(&body) {
-                        Ok(new_bounds) => {
-                            *WORLD_BOUNDS.write().unwrap() = new_bounds.clone();
-                            eprintln!("[http_server] World Bounds aktualisiert: {:?}", new_bounds);
-                            ws_broadcast(serde_json::json!({"type": "bounds-updated", "bounds": new_bounds}).to_string());
-                            text_response("{\"status\":\"ok\"}", "application/json")
-                        }
-                        Err(e) => Response::from_string(format!("{{\"error\":\"{}\"}}", e))
-                            .with_status_code(400)
-                            .with_header(cors_header()),
-                    }
-                }
-                (&Method::Get, "/api/data") => {
-                    let data = state.app_data();
-                    let payload = LiveMapData {
-                        data,
-                        current_position: state.current_position(),
-                    };
-                    match serde_json::to_string(&payload) {
-                        Ok(json) => text_response(&json, "application/json"),
-                        Err(e) => Response::from_string(format!("{{\"error\":\"{}\"}}", e))
-                            .with_status_code(500)
-                            .with_header(cors_header()),
-                    }
-                }
-                (&Method::Get, path) if path.starts_with("/api/poi_image/") => {
-                    let poi_id = path.strip_prefix("/api/poi_image/").unwrap();
-                    let data = state.app_data();
-                    let poi = data.pois.iter().find(|p| p.id == poi_id);
-                    match poi.and_then(|p| p.image_path.as_ref()) {
-                        Some(filename) => {
-                            let image_dir = state.data_path.parent().unwrap_or(&state.data_path).join("poi_images");
-                            let img_path = image_dir.join(filename);
-                            match std::fs::read(&img_path) {
-                                Ok(bytes) => bytes_response(&bytes, "image/png"),
-                                Err(_) => Response::from_string("Not Found")
-                                    .with_status_code(404)
-                                    .with_header(cors_header()),
-                            }
-                        }
-                        None => Response::from_string("Not Found")
-                            .with_status_code(404)
-                            .with_header(cors_header()),
-                    }
-                }
-                _ => Response::from_string("Not Found")
-                    .with_status_code(404)
-                    .with_header(cors_header()),
-            };
-
-            let _ = request.respond(response);
+            Ok(Message::Close(_)) | Err(_) => return,
+            _ => {}
         }
-    });
+    }
+    if !logged_in { return; }
+
+    // send login sequence
+    let bounds = WORLD_BOUNDS.read().unwrap().clone();
+    let has_hires = {
+        let tiles_dir = TILES_DIR.get().map(|s| s.as_str()).unwrap_or(".");
+        let path = PathBuf::from(tiles_dir).join("4").join("0").join("0.png");
+        tokio::fs::metadata(&path).await.is_ok()
+    };
+    let _ = socket.send(Message::Text(
+        serde_json::json!(["login-success", {"bounds": bounds, "has_hires_tiles": has_hires}]).to_string()
+    )).await;
+
+    let data = state.data.lock().unwrap().clone();
+    let _ = socket.send(Message::Text(
+        serde_json::json!(["data-updated", data]).to_string()
+    )).await;
+
+    let pos = state.current_position.lock().unwrap().clone();
+    if let Some(pos) = pos {
+        let _ = socket.send(Message::Text(
+            serde_json::json!(["coord-update", pos]).to_string()
+        )).await;
+    }
+
+    let ids = state.poi_connections.lock().unwrap().clone();
+    let _ = socket.send(Message::Text(
+        serde_json::json!(["poi-connections", ids]).to_string()
+    )).await;
+
+    let mut rx = tx.subscribe();
+    loop {
+        tokio::select! {
+            msg = rx.recv() => {
+                match msg {
+                    Ok(text) => {
+                        if socket.send(Message::Text(text)).await.is_err() { break; }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            incoming = socket.recv() => {
+                match incoming {
+                    Some(Ok(Message::Text(text))) => {
+                        if text.contains("\"ping\"") {
+                            let _ = socket.send(Message::Text(
+                                serde_json::json!(["pong", null]).to_string()
+                            )).await;
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    _ => {}
+                }
+            }
+        }
+    }
 }

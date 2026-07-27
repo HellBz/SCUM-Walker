@@ -131,6 +131,10 @@ struct AppData {
     tracking_interval: u64,
     #[serde(default = "default_hidden_categories")]
     hidden_categories: Vec<String>,
+    #[serde(default)]
+    poi_connections: Vec<String>,
+    #[serde(default)]
+    player_position: Option<CoordRecord>,
 }
 
 fn default_interval() -> u64 {
@@ -147,7 +151,6 @@ pub(crate) struct AppState {
     recording: Mutex<bool>,
     live_tracking: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
-    chat_paused: Mutex<bool>,
     poi_connections: Mutex<Vec<String>>,
 }
 
@@ -290,54 +293,6 @@ fn is_scum_foreground() -> bool {
 fn is_scum_foreground() -> bool { false }
 
 #[cfg(windows)]
-fn start_chat_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
-    thread::spawn(move || {
-        loop {
-            if is_key_pressed(VK_T) && is_scum_foreground() {
-                *state.chat_paused.lock().unwrap() = true;
-                let _ = app_handle.emit("chat-paused", true);
-                ws_broadcast(serde_json::json!({"type": "chat-paused", "value": true}).to_string());
-                eprintln!("[chat-watcher] Chat geöffnet (T) - pausiere Tracking");
-
-                // Warte auf Enter oder ESC
-                loop {
-                    if is_key_pressed(VK_RETURN) {
-                        // Erster Enter erkannt. Warte 300ms, dann prüfe
-                        // ob innerhalb 2 Sekunden ein weiterer Enter/ESC kommt.
-                        thread::sleep(Duration::from_millis(300));
-                        let mut closed = true;
-                        let deadline = std::time::Instant::now() + Duration::from_secs(2);
-                        while std::time::Instant::now() < deadline {
-                            if is_key_pressed(VK_RETURN) || is_key_pressed(VK_ESCAPE) {
-                                closed = true;
-                                thread::sleep(Duration::from_millis(100));
-                                break;
-                            }
-                            thread::sleep(Duration::from_millis(50));
-                        }
-                        if closed {
-                            break;
-                        }
-                    }
-                    if is_key_pressed(VK_ESCAPE) {
-                        thread::sleep(Duration::from_millis(100));
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(50));
-                }
-
-                *state.chat_paused.lock().unwrap() = false;
-                let _ = app_handle.emit("chat-paused", false);
-                ws_broadcast(serde_json::json!({"type": "chat-paused", "value": false}).to_string());
-                eprintln!("[chat-watcher] Chat geschlossen - resume");
-                thread::sleep(Duration::from_millis(300));
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-    });
-}
-
-#[cfg(windows)]
 fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let mut clipboard = Clipboard::new().expect("clipboard");
@@ -353,10 +308,10 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 }
                 processing.store(true, std::sync::atomic::Ordering::SeqCst);
                 eprintln!("[hotkey] F9 gedrückt - erstelle POI + Screenshot");
-                ws_broadcast(serde_json::json!({"type": "poi-creating"}).to_string());
+                ws_broadcast(serde_json::json!(["poi-creating", null]).to_string());
 
                 // 1. Ctrl+C an SCUM senden für Koordinaten
-                if send_ctrl_c_to_scum(Some(&state)).is_err() {
+                if send_ctrl_c_to_scum().is_err() {
                     eprintln!("[hotkey] Ctrl+C fehlgeschlagen");
                     processing.store(false, std::sync::atomic::Ordering::SeqCst);
                     thread::sleep(Duration::from_millis(500));
@@ -430,12 +385,12 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     save_data(&state.data_path, &data);
                     let data_clone = data.clone();
                     let _ = app_handle.emit("data-updated", data_clone.clone());
-                    ws_broadcast(serde_json::json!({"type": "data-updated", "data": data_clone}).to_string());
+                    ws_broadcast(serde_json::json!(["data-updated", data_clone]).to_string());
                 }
 
                 eprintln!("[hotkey] POI erstellt: {} bei X={} Y={}", poi_label, record.x, record.y);
                 let _ = app_handle.emit("hotkey-poi-created", &poi_label);
-                ws_broadcast(serde_json::json!({"type": "poi-created", "label": poi_label}).to_string());
+                ws_broadcast(serde_json::json!(["poi-created", {"label": poi_label}]).to_string());
 
                 processing.store(false, std::sync::atomic::Ordering::SeqCst);
 
@@ -450,17 +405,10 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 }
 
 #[cfg(windows)]
-fn send_ctrl_c_to_scum(state: Option<&AppState>) -> Result<(), String> {
-    let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden")?;
-
-    if let Some(s) = state {
-        if *s.chat_paused.lock().unwrap() {
-            return Err("Chat ist geöffnet - sende kein Ctrl+C".to_string());
-        }
-    }
-
+fn send_ctrl_c_to_scum() -> Result<(), String> {
+    let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden".to_string())?;
     let fg = unsafe { GetForegroundWindow() };
-    if fg.0 == 0 || Some(hwnd) != find_scum_window() || fg != hwnd {
+    if fg.0 == 0 || fg != hwnd {
         return Err("SCUM ist nicht im Vordergrund".to_string());
     }
 
@@ -503,7 +451,7 @@ fn send_ctrl_c_to_scum(state: Option<&AppState>) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn send_ctrl_c_to_scum(_state: Option<&AppState>) -> Result<(), String> {
+fn send_ctrl_c_to_scum() -> Result<(), String> {
     Err("Nicht unterstützt auf dieser Plattform".to_string())
 }
 
@@ -614,7 +562,7 @@ fn capture_scum_window() -> Option<image::RgbaImage> { None }
 
 #[tauri::command]
 fn get_current_location() -> Result<CoordRecord, String> {
-    send_ctrl_c_to_scum(None)?;
+    send_ctrl_c_to_scum()?;
     std::thread::sleep(Duration::from_millis(300));
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
     let text = clipboard.get_text().map_err(|e| e.to_string())?;
@@ -635,7 +583,7 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 let scum_running = scum_is_running();
                 if scum_running != last_scum_status {
                     let _ = app_handle.emit("scum-status", scum_running);
-                    ws_broadcast(serde_json::json!({"type": "scum-status", "value": scum_running}).to_string());
+                    ws_broadcast(serde_json::json!(["scum-status", scum_running]).to_string());
                     last_scum_status = scum_running;
                 }
                 if !scum_running {
@@ -643,14 +591,7 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
-                #[cfg(windows)]
-                {
-                    if *state.chat_paused.lock().unwrap() {
-                        thread::sleep(Duration::from_millis(200));
-                        continue;
-                    }
-                }
-                if send_ctrl_c_to_scum(Some(&state)).is_err() {
+                if send_ctrl_c_to_scum().is_err() {
                     let interval = state.data.lock().unwrap().tracking_interval;
                     thread::sleep(Duration::from_secs(interval));
                     continue;
@@ -667,22 +608,27 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                             changed
                         };
 
-                        if *state.recording.lock().unwrap() {
-                            let mut data = state.data.lock().unwrap();
-                            if let Some(current_id) = data.current_route_id.clone() {
-                                if let Some(route) = data.routes.iter_mut().find(|r| r.id == current_id) {
-                                    route.records.push(record.clone());
-                                    save_data(&state.data_path, &data);
+                        if should_emit {
+                            let is_recording = *state.recording.lock().unwrap();
+                            {
+                                let mut data = state.data.lock().unwrap();
+                                if is_recording {
+                                    if let Some(current_id) = data.current_route_id.clone() {
+                                        if let Some(route) = data.routes.iter_mut().find(|r| r.id == current_id) {
+                                            route.records.push(record.clone());
+                                        }
+                                    }
+                                }
+                                data.player_position = Some(record.clone());
+                                let data_clone = data.clone();
+                                save_data(&state.data_path, &data_clone);
+                                drop(data);
+                                if is_recording {
+                                    ws_broadcast(serde_json::json!(["data-updated", data_clone]).to_string());
                                 }
                             }
-                            let data_clone = data.clone();
-                            drop(data);
-                            ws_broadcast(serde_json::json!({"type": "data-updated", "data": data_clone}).to_string());
-                        }
-
-                        if should_emit {
                             let _ = app_handle.emit("coord-update", record.clone());
-                            ws_broadcast(serde_json::json!({"type": "coord-update", "data": record}).to_string());
+                            ws_broadcast(serde_json::json!(["coord-update", record]).to_string());
                         }
                     }
                 }
@@ -764,6 +710,83 @@ fn export_data(state: State<Arc<AppState>>, format: String) -> Result<String, St
 
 const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/latest/download/tiles-hires.zip";
 const LOWRES_TILES_ZIP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles-lowres.zip"));
+const GITHUB_LATEST_RELEASE_URL: &str = "https://api.github.com/repos/HellBz/SCUM-Walker/releases/latest";
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct UpdateInfo {
+    current_version: String,
+    latest_version: String,
+    url: String,
+}
+
+fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
+    let s = s.trim_start_matches('v');
+    let mut parts = s.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+fn version_greater(a: &str, b: &str) -> bool {
+    match (parse_version(a), parse_version(b)) {
+        (Some(a), Some(b)) => a > b,
+        _ => false,
+    }
+}
+
+#[tauri::command]
+fn get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+fn check_update() -> Result<Option<UpdateInfo>, String> {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(GITHUB_LATEST_RELEASE_URL)
+        .header("User-Agent", "scum-walker-tauri")
+        .send()
+        .map_err(|e| format!("Update-Check fehlgeschlagen: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("GitHub API Fehler: {}", response.status()));
+    }
+    let text = response.text().map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let tag = json["tag_name"].as_str().ok_or("tag_name fehlt")?;
+    let url = json["html_url"].as_str().ok_or("html_url fehlt")?.to_string();
+    let latest = tag.trim_start_matches('v').to_string();
+    if version_greater(&latest, &current) {
+        Ok(Some(UpdateInfo {
+            current_version: current,
+            latest_version: latest,
+            url,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("Öffnen externer URLs ist nur unter Windows verfügbar".to_string())
+    }
+}
 
 fn get_tiles_dir(app: &tauri::AppHandle) -> PathBuf {
     match app.path().app_data_dir() {
@@ -845,7 +868,7 @@ fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     let _ = app_handle.emit("hires-download-progress", format!("Fertig! {} Tiles entpackt.", count));
     let _ = app_handle.emit("hires-tiles-installed", ());
-    ws_broadcast(serde_json::json!({"type": "hires-tiles-installed"}).to_string());
+    ws_broadcast(serde_json::json!(["hires-tiles-installed", null]).to_string());
     Ok(())
 }
 
@@ -863,7 +886,7 @@ fn new_route(state: State<Arc<AppState>>, name: String, color: String) -> AppDat
     data.routes.push(route);
     save_data(&state.data_path, &data);
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -873,7 +896,7 @@ fn select_route(state: State<Arc<AppState>>, id: String) -> AppData {
     data.current_route_id = Some(id);
     save_data(&state.data_path, &data);
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -885,7 +908,7 @@ fn rename_route(state: State<Arc<AppState>>, id: String, name: String) -> AppDat
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -898,7 +921,7 @@ fn delete_route(state: State<Arc<AppState>>, id: String) -> AppData {
     }
     save_data(&state.data_path, &data);
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -910,7 +933,7 @@ fn set_route_color(state: State<Arc<AppState>>, id: String, color: String) -> Ap
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -922,7 +945,7 @@ fn toggle_route_visibility(state: State<Arc<AppState>>, id: String) -> AppData {
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -936,10 +959,10 @@ fn toggle_recording(state: State<Arc<AppState>>) -> bool {
         let mut tracking = state.live_tracking.lock().unwrap();
         if !*tracking {
             *tracking = true;
-            ws_broadcast(serde_json::json!({"type": "tracking-state", "recording": true, "live_tracking": true}).to_string());
+            ws_broadcast(serde_json::json!(["tracking-state", {"recording": true, "live_tracking": true}]).to_string());
         }
     }
-    ws_broadcast(serde_json::json!({"type": "tracking-state", "recording": is_recording, "live_tracking": *state.live_tracking.lock().unwrap()}).to_string());
+    ws_broadcast(serde_json::json!(["tracking-state", {"recording": is_recording, "live_tracking": *state.live_tracking.lock().unwrap()}]).to_string());
     is_recording
 }
 
@@ -953,7 +976,7 @@ fn toggle_live_tracking(state: State<Arc<AppState>>) -> bool {
     let mut tracking = state.live_tracking.lock().unwrap();
     *tracking = !*tracking;
     let is_tracking = *tracking;
-    ws_broadcast(serde_json::json!({"type": "tracking-state", "recording": *state.recording.lock().unwrap(), "live_tracking": is_tracking}).to_string());
+    ws_broadcast(serde_json::json!(["tracking-state", {"recording": *state.recording.lock().unwrap(), "live_tracking": is_tracking}]).to_string());
     is_tracking
 }
 
@@ -968,7 +991,7 @@ fn set_tracking_interval(state: State<Arc<AppState>>, seconds: u64) {
         let mut data = state.data.lock().unwrap();
         data.tracking_interval = seconds;
         save_data(&state.data_path, &data);
-        ws_broadcast(serde_json::json!({"type": "tracking-interval", "value": seconds}).to_string());
+        ws_broadcast(serde_json::json!(["tracking-interval", seconds]).to_string());
     }
 }
 
@@ -983,9 +1006,26 @@ fn ws_broadcast_msg(message: String) {
 }
 
 #[tauri::command]
-fn set_poi_connections(state: State<Arc<AppState>>, ids: Vec<String>) {
+fn set_poi_connections(state: State<Arc<AppState>>, app_handle: tauri::AppHandle, ids: Vec<String>) {
     *state.poi_connections.lock().unwrap() = ids.clone();
-    ws_broadcast(serde_json::json!({"type": "poi-connections", "ids": ids}).to_string());
+    {
+        let mut data = state.data.lock().unwrap();
+        data.poi_connections = ids.clone();
+    }
+    let _ = save_data(&state.data_path, &state.data.lock().unwrap());
+    let payload = serde_json::json!(["poi-connections", ids]);
+    let _ = app_handle.emit("poi-connections", &payload);
+    ws_broadcast(payload.to_string());
+}
+
+#[tauri::command]
+fn get_poi_connections(state: State<Arc<AppState>>) -> Vec<String> {
+    state.poi_connections.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn get_player_position(state: State<Arc<AppState>>) -> Option<CoordRecord> {
+    state.current_position.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -997,7 +1037,7 @@ fn add_poi(state: State<Arc<AppState>>, mut poi: Poi) -> AppData {
     data.pois.push(poi);
     save_data(&state.data_path, &data);
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -1011,7 +1051,7 @@ fn update_poi(state: State<Arc<AppState>>, id: String, label: String, color: Str
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -1021,7 +1061,7 @@ fn remove_poi(state: State<Arc<AppState>>, id: String) -> AppData {
     data.pois.retain(|p| p.id != id);
     save_data(&state.data_path, &data);
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -1035,7 +1075,7 @@ fn toggle_hidden_category(state: State<Arc<AppState>>, category: String) -> AppD
     }
     save_data(&state.data_path, &data);
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
 }
 
@@ -1055,7 +1095,7 @@ fn paste_poi_screenshot(state: State<Arc<AppState>>, id: String) -> Result<AppDa
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     Ok(clone)
 }
 
@@ -1089,7 +1129,7 @@ fn upload_poi_image(state: State<Arc<AppState>>, id: String, base64_data: String
         save_data(&state.data_path, &data);
     }
     let clone = data.clone();
-    ws_broadcast(serde_json::json!({"type": "data-updated", "data": clone}).to_string());
+    ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     Ok(clone)
 }
 
@@ -1186,6 +1226,30 @@ fn save_overlay_config(app: tauri::AppHandle, config: OverlayConfig) -> Result<(
 }
 
 #[tauri::command]
+fn save_overlay_state(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("overlay").ok_or("Overlay nicht gefunden")?;
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+    if position.x <= -32000 || position.y <= -32000 || size.width == 0 || size.height == 0 {
+        return Ok(());
+    }
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let logical_w = (size.width as f64 / scale).round() as u32;
+    let logical_h = (size.height as f64 / scale).round() as u32;
+    let path = overlay_config_path(&app);
+    let existing = load_overlay_config(&path);
+    let config = OverlayConfig {
+        x: Some(position.x),
+        y: Some(position.y),
+        width: Some(logical_w),
+        height: Some(logical_h),
+        opacity: existing.opacity,
+    };
+    save_overlay_config_file(&path, &config);
+    Ok(())
+}
+
+#[tauri::command]
 fn get_overlay_config(app: tauri::AppHandle) -> OverlayConfig {
     let path = overlay_config_path(&app);
     load_overlay_config(&path)
@@ -1214,9 +1278,9 @@ fn reset_overlay_config(app: tauri::AppHandle) -> Result<(), String> {
 fn livemap_url() -> String {
     let port = http_server::HTTP_PORT.get().copied().unwrap_or(4488);
     if port == 80 {
-        "http://127.0.0.1/livemap.html".to_string()
+        "http://127.0.0.1/livemap.html?v=4".to_string()
     } else {
-        format!("http://127.0.0.1:{}/livemap.html", port)
+        format!("http://127.0.0.1:{}/livemap.html?v=4", port)
     }
 }
 
@@ -1265,6 +1329,7 @@ fn set_overlay_clickthrough(app: tauri::AppHandle, clickthrough: bool) -> Result
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let data_path = app.path().app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
@@ -1272,17 +1337,14 @@ fn main() {
 
             let data = load_data(&data_path);
             let state = Arc::new(AppState {
-                data: Mutex::new(data),
+                data: Mutex::new(data.clone()),
                 data_path,
                 recording: Mutex::new(false),
                 live_tracking: Mutex::new(false),
-                current_position: Mutex::new(None),
-                chat_paused: Mutex::new(false),
-                poi_connections: Mutex::new(Vec::new()),
+                current_position: Mutex::new(data.player_position.clone()),
+                poi_connections: Mutex::new(data.poi_connections.clone()),
             });
 
-            #[cfg(windows)]
-            start_chat_watcher(state.clone(), app.handle().clone());
             #[cfg(windows)]
             start_hotkey_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
@@ -1323,6 +1385,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_data,
             export_data,
+            get_version,
+            check_update,
+            open_url,
             get_current_location,
             download_hires_tiles,
             check_hires_tiles,
@@ -1340,6 +1405,8 @@ fn main() {
             get_tracking_interval,
             ws_broadcast_msg,
             set_poi_connections,
+            get_poi_connections,
+            get_player_position,
             add_poi,
             update_poi,
             remove_poi,
@@ -1354,6 +1421,7 @@ fn main() {
             close_overlay,
             set_overlay_clickthrough,
             save_overlay_config,
+            save_overlay_state,
             get_overlay_config,
             reset_overlay_config
         ])
