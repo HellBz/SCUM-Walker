@@ -151,6 +151,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            artifacts/build-ubuntu-22.04/*
-            artifacts/build-macos-latest/*
-            artifacts/tiles-hires/*
+            artifacts/*.deb
+            artifacts/*.rpm
+            artifacts/*.AppImage
+            artifacts/*.dmg
+            artifacts/*.app
+            artifacts/tiles-hires.zip
