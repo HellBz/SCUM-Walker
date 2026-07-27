@@ -1456,6 +1456,10 @@ async function checkVersion() {
       updateLink.style.display = 'block';
       updateLink.addEventListener('click', async (e) => {
         e.preventDefault();
+        if (!update.is_windows) {
+          await invoke('open_url', { url: 'https://github.com/HellBz/SCUM-Walker/releases/latest' });
+          return;
+        }
         updateLink.textContent = 'Lade Update...';
         updateLink.style.pointerEvents = 'none';
         try {

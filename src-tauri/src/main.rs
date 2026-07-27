@@ -718,6 +718,7 @@ struct UpdateInfo {
     current_version: String,
     latest_version: String,
     url: String,
+    is_windows: bool,
 }
 
 fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
@@ -754,6 +755,7 @@ async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, Strin
                 current_version: current,
                 latest_version: update.version.clone(),
                 url: GITHUB_LATEST_RELEASE_URL.to_string(),
+                is_windows: cfg!(windows),
             }))
         }
         None => Ok(None),
