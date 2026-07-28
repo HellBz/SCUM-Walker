@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SCUM.Walker",
+  "productName": "SCUM Walker",
   "version": "0.7.0",
   "identifier": "com.scumwalker.app",
   "build": {

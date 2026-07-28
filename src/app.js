@@ -250,6 +250,69 @@ document.getElementById('mapFitBtn').addEventListener('click', () => {
   map.flyToBounds([[0, 0], [MAP_UNITS, MAP_UNITS]], { duration: 0.8 });
 });
 
+// Measure mode
+let measureMode = false;
+let measureLine = null;
+let measureLabel = null;
+let measureStart = null;
+let isMeasuring = false;
+const mapMeasureBtn = document.getElementById('mapMeasureBtn');
+
+if (mapMeasureBtn) {
+  mapMeasureBtn.addEventListener('click', () => {
+    measureMode = !measureMode;
+    mapMeasureBtn.classList.toggle('active', measureMode);
+    map.getContainer().style.cursor = measureMode ? 'crosshair' : '';
+    if (!measureMode) clearMeasure();
+  });
+}
+
+function clearMeasure() {
+  if (measureLine) { map.removeLayer(measureLine); measureLine = null; }
+  if (measureLabel) { map.removeLayer(measureLabel); measureLabel = null; }
+  measureStart = null;
+  isMeasuring = false;
+}
+
+function formatDistance(cm) {
+  if (cm >= 100000) return (cm / 100000).toFixed(2) + ' km';
+  if (cm >= 100) return (cm / 100).toFixed(1) + ' m';
+  return cm.toFixed(0) + ' cm';
+}
+
+map.on('mousedown', (e) => {
+  if (!measureMode) return;
+  isMeasuring = true;
+  measureStart = e.latlng;
+  if (measureLine) map.removeLayer(measureLine);
+  if (measureLabel) map.removeLayer(measureLabel);
+  measureLine = L.polyline([measureStart, measureStart], { color: '#00ffcc', weight: 2, dashArray: '6,4' }).addTo(map);
+  measureLabel = L.marker(measureStart, {
+    icon: L.divIcon({ className: 'measure-label', html: '', iconSize: [120, 24], iconAnchor: [60, -12] }),
+    interactive: false
+  }).addTo(map);
+  map.dragging.disable();
+});
+
+map.on('mousemove', (e) => {
+  if (!isMeasuring || !measureStart) return;
+  const start = latLngToGame(measureStart.lat, measureStart.lng);
+  const end = latLngToGame(e.latlng.lat, e.latlng.lng);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  measureLine.setLatLngs([measureStart, e.latlng]);
+  measureLabel.setLatLng(e.latlng);
+  const el = measureLabel.getElement();
+  if (el) el.innerHTML = formatDistance(dist);
+});
+
+map.on('mouseup', (e) => {
+  if (!isMeasuring) return;
+  isMeasuring = false;
+  map.dragging.enable();
+});
+
 // Leaflet layers for routes, POIs, live marker
 let routeLayers = {};
 let routeEndMarkers = {};

@@ -332,6 +332,18 @@ button:hover { background: #3a3a3a; }
 #mapControls button.active { background: #00ffcc33; color: #00ffcc; border-color: #00ffcc; }
 #mapControls span { color: #aaa; font-size: 12px; min-width: 40px; text-align: center; }
 
+.measure-label {
+  background: rgba(20, 30, 30, 0.9);
+  border: 1px solid #00ffcc;
+  border-radius: 4px;
+  color: #00ffcc;
+  font-size: 12px;
+  font-family: 'Segoe UI', sans-serif;
+  padding: 2px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .poi-label {
   color: #fff;
   font-size: 12px;
