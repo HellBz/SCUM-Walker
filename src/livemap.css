@@ -10,6 +10,7 @@ html, body {
   font-family: 'Segoe UI', sans-serif;
 }
 
+html.tauri-mode,
 body.tauri-mode,
 body.tauri-mode #mapShell,
 body.tauri-mode #map {
@@ -211,6 +212,23 @@ body:not(.tauri-mode) #dragHandle {
   display: none;
 }
 
+body.bigmap-mode #dragHandle,
+body.bigmap-mode #controls,
+body.bigmap-mode #status {
+  display: none !important;
+}
+
+body.bigmap-mode #mapShell {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+}
+
 #controls button {
   width: 26px;
   height: 22px;
@@ -291,3 +309,93 @@ body:not(.tauri-mode) #dragHandle {
   display: inline-block;
   transform-origin: center center;
 }
+
+.bigmap-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+.bigmap-modal {
+  background: #1e1e2e;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 300px;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.bigmap-modal h3 {
+  margin: 0 0 16px 0;
+  color: #fff;
+  font-size: 16px;
+}
+.bigmap-modal label {
+  display: block;
+  color: #aaa;
+  font-size: 12px;
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+.bigmap-modal input[type="text"],
+.bigmap-modal select {
+  width: 100%;
+  background: #2a2a3a;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.bigmap-modal input[type="text"]:focus,
+.bigmap-modal select:focus {
+  outline: none;
+  border-color: #00ffcc;
+}
+.bigmap-color-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.bigmap-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+.bigmap-color-swatch.selected {
+  border-color: #fff;
+}
+.bigmap-modal-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+.bigmap-btn-cancel {
+  background: #333;
+  border: 1px solid #555;
+  color: #ccc;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.bigmap-btn-save {
+  background: #00b894;
+  border: 1px solid #00b894;
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.bigmap-btn-cancel:hover { background: #444; }
+.bigmap-btn-save:hover { background: #00d9a3; }

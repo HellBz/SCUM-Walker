@@ -1,7 +1,23 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
-  "windows": ["main", "overlay"],
+  "windows": ["main", "overlay", "bigmap"],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:4488/*",
+      "http://127.0.0.1:4498/*",
+      "http://127.0.0.1:4508/*",
+      "http://127.0.0.1:4518/*",
+      "http://127.0.0.1:4528/*",
+      "http://127.0.0.1:4538/*",
+      "http://127.0.0.1:4548/*",
+      "http://127.0.0.1:4558/*",
+      "http://127.0.0.1:4568/*",
+      "http://127.0.0.1:4578/*",
+      "http://127.0.0.1:4588/*",
+      "http://127.0.0.1:80/*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:event:allow-listen",

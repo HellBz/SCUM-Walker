@@ -22,10 +22,10 @@ use std::ffi::OsStr;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(windows)]
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT, RECT};
 #[cfg(windows)]
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
+    BitBlt, ClientToScreen, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
     GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
     HDC, SRCCOPY,
 };
@@ -41,8 +41,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_CONTROL, VK_C,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId,
-    IsWindowVisible,
+    EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow,
+    GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow,
 };
 
 const DEFAULT_INTERVAL_SECONDS: u64 = 10;
@@ -107,7 +107,7 @@ impl Route {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Poi {
+pub(crate) struct Poi {
     id: String,
     label: String,
     x: f64,
@@ -153,6 +153,9 @@ pub(crate) struct AppState {
     live_tracking: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
     poi_connections: Mutex<Vec<String>>,
+    big_map_active: Mutex<bool>,
+    bigmap_modal_open: Mutex<bool>,
+    app_handle: Mutex<Option<tauri::AppHandle>>,
 }
 
 impl AppState {
@@ -274,6 +277,10 @@ const VK_F9: u16 = 0x78;
 const VK_RETURN: u16 = 0x0D;
 #[cfg(windows)]
 const VK_ESCAPE: u16 = 0x1B;
+#[cfg(windows)]
+const VK_RMENU: u16 = 0xA5; // right Alt / AltGr
+#[cfg(windows)]
+const VK_M: u16 = 0x4D;
 
 #[cfg(windows)]
 fn is_key_pressed(vk: u16) -> bool {
@@ -406,6 +413,215 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 }
 
 #[cfg(windows)]
+fn get_scum_client_rect_screen() -> Option<(i32, i32, i32, i32)> {
+    let hwnd = find_scum_window()?;
+    let mut rect: RECT = unsafe { std::mem::zeroed() };
+    unsafe {
+        GetClientRect(hwnd, &mut rect).ok()?;
+    }
+    let mut top_left = POINT { x: 0, y: 0 };
+    unsafe {
+        let _ = ClientToScreen(hwnd, &mut top_left);
+    }
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    Some((top_left.x, top_left.y, width, height))
+}
+
+#[cfg(windows)]
+fn create_bigmap_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
+    // Load through the real HTTP server (like the small overlay's iframe does) so the
+    // {{WS_PORT}} template placeholder is substituted correctly - loading via Tauri's
+    // internal asset protocol (WebviewUrl::App) leaves it unreplaced and the websocket
+    // ends up connecting to the wrong (internal asset) port.
+    let url = tauri::Url::parse(&format!("{}&bigmap=1", livemap_url())).map_err(|e| e.to_string())?;
+    let mut builder = WebviewWindowBuilder::new(app, "bigmap", tauri::WebviewUrl::External(url))
+        .title("SCUM Walker Big Map")
+        .inner_size(800.0, 800.0)
+        .decorations(false)
+        .shadow(false)
+        .always_on_top(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .focused(false)
+        .visible(false);
+    #[cfg(windows)]
+    {
+        builder = builder.transparent(true);
+    }
+    let window = builder.build().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    disable_window_rounded_corners(&window);
+    Ok(window)
+}
+
+// Windows 11 automatically rounds the corners of top-level windows, which shows up as a
+// thin visible edge/artifact around an undecorated, fully transparent window. Explicitly
+// opt this window out via DWM so it renders perfectly square/borderless.
+#[cfg(windows)]
+fn disable_window_rounded_corners(window: &tauri::WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND};
+    if let Ok(raw_hwnd) = window.hwnd() {
+        // window.hwnd() returns HWND from tauri's (newer) version of the `windows` crate;
+        // convert the raw handle value into our own dependency's HWND type for the call below.
+        let hwnd = HWND(raw_hwnd.0 as isize);
+        let pref = DWMWCP_DONOTROUND;
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &pref as *const _ as *const _,
+                std::mem::size_of_val(&pref) as u32,
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+fn toggle_big_map(app: &tauri::AppHandle, state: &Arc<AppState>) {
+    let mut active = state.big_map_active.lock().unwrap();
+
+    if *active {
+        if let Some(window) = app.get_webview_window("bigmap") {
+            ws_broadcast(serde_json::json!(["bigmap-closing", null]).to_string());
+            let _ = window.hide();
+        }
+        *active = false;
+        *state.bigmap_modal_open.lock().unwrap() = false;
+        eprintln!("[bigmap] Geschlossen");
+        return;
+    }
+
+    let window = match app.get_webview_window("bigmap") {
+        Some(w) => w,
+        None => match create_bigmap_window(app) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[bigmap] Fenster konnte nicht erstellt werden: {}", e);
+                return;
+            }
+        },
+    };
+
+    sync_bigmap_geometry(&window, true);
+    let _ = window.show();
+    let _ = window.set_focus();
+    *active = true;
+    eprintln!("[bigmap] Geöffnet");
+}
+
+// Resizes/repositions the bigmap window to match SCUM's current client area (square,
+// side = SCUM window height, horizontally centered over it). Called once on open and
+// then polled periodically while the bigmap is active so resizing/moving/toggling
+// fullscreen on SCUM keeps the overlay in sync without requiring a re-toggle.
+// Extra transparent margin added to each side of the bigmap window beyond the square
+// map area, so the (square) map is centered within a slightly wider overlay window.
+const BIGMAP_SIDE_MARGIN: i32 = 0;
+
+#[cfg(windows)]
+fn sync_bigmap_geometry(window: &tauri::WebviewWindow, log: bool) {
+    if let Some((sx, sy, sw, sh)) = get_scum_client_rect_screen() {
+        let side = sh.max(1) as i32;
+        let width = (side + BIGMAP_SIDE_MARGIN * 2).max(1) as u32;
+        let x = sx + (sw - width as i32) / 2;
+        let y = sy;
+        if log {
+            eprintln!(
+                "[bigmap] SCUM-Rect: pos=({},{}) size={}x{} -> Bigmap: pos=({},{}) size={}x{}",
+                sx, sy, sw, sh, x, y, width, side
+            );
+        }
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height: side as u32 }));
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    } else if let Ok(Some(monitor)) = window.current_monitor() {
+        let msize = monitor.size();
+        let mpos = monitor.position();
+        let side = msize.height as i32;
+        let width = (side + BIGMAP_SIDE_MARGIN * 2).max(1) as u32;
+        let x = mpos.x + (msize.width as i32 - width as i32) / 2;
+        let y = mpos.y;
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height: side as u32 }));
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    }
+}
+
+#[cfg(windows)]
+fn is_bigmap_foreground(app: &tauri::AppHandle) -> bool {
+    let fg = unsafe { GetForegroundWindow() };
+    if fg.0 == 0 {
+        return false;
+    }
+    app.get_webview_window("bigmap")
+        .and_then(|w| w.hwnd().ok())
+        .map_or(false, |h| h.0 as isize == fg.0 as isize)
+}
+
+#[cfg(windows)]
+fn start_bigmap_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut combo_down = false;
+        let mut sync_tick: u32 = 0;
+        loop {
+            let scum_fg = is_scum_foreground();
+            let bigmap_fg = is_bigmap_foreground(&app_handle);
+            // Opening requires SCUM foreground; closing also works while the bigmap
+            // window itself has focus (e.g. right after clicking on it).
+            let combo_pressed = (scum_fg || bigmap_fg) && is_key_pressed(VK_RMENU) && is_key_pressed(VK_M);
+
+            if combo_pressed && !combo_down {
+                combo_down = true;
+                let was_active = *state.big_map_active.lock().unwrap();
+                toggle_big_map(&app_handle, &state);
+                if was_active {
+                    let _ = send_esc_to_scum();
+                }
+            } else if !combo_pressed {
+                combo_down = false;
+            }
+
+            // Auto-hide: only show the big map while SCUM (or the map itself) has focus.
+            // If the user switches to some other app, hide it automatically.
+            if *state.big_map_active.lock().unwrap() && !scum_fg && !bigmap_fg {
+                toggle_big_map(&app_handle, &state);
+            }
+
+            // ESC closes the big map and forwards the ESC press to SCUM, never opens anything.
+            // But not if the POI modal is open - in that case ESC should only close the modal (handled in JS).
+            if *state.big_map_active.lock().unwrap() && is_key_pressed(VK_ESCAPE) {
+                if *state.bigmap_modal_open.lock().unwrap() {
+                    // Modal is open: let JS handle ESC to close the modal.
+                    // Wait for ESC to be released so we don't re-check and close the bigmap
+                    // in the same key press after JS has cleared the modal flag.
+                    while is_key_pressed(VK_ESCAPE) {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                } else {
+                    toggle_big_map(&app_handle, &state);
+                    let _ = send_esc_to_scum();
+                    while is_key_pressed(VK_ESCAPE) {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            }
+
+            // Keep the overlay's size/position in sync with SCUM's window while it's
+            // open (e.g. user resizes SCUM, moves it, or toggles fullscreen).
+            sync_tick += 1;
+            if *state.big_map_active.lock().unwrap() && sync_tick % 10 == 0 {
+                if let Some(window) = app_handle.get_webview_window("bigmap") {
+                    sync_bigmap_geometry(&window, false);
+                }
+            }
+
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
+}
+
+#[cfg(windows)]
 fn send_ctrl_c_to_scum() -> Result<(), String> {
     let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden".to_string())?;
     let fg = unsafe { GetForegroundWindow() };
@@ -453,6 +669,52 @@ fn send_ctrl_c_to_scum() -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn send_ctrl_c_to_scum() -> Result<(), String> {
+    Err("Nicht unterstützt auf dieser Plattform".to_string())
+}
+
+#[cfg(windows)]
+fn send_esc_to_scum() -> Result<(), String> {
+    let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden".to_string())?;
+
+    // The bigmap window currently has focus (it's interactive), so bring SCUM back
+    // to the foreground first, then forward the ESC key press to it.
+    unsafe {
+        let _ = SetForegroundWindow(hwnd);
+    }
+    std::thread::sleep(Duration::from_millis(60));
+
+    fn kbd_input(scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0),
+                    wScan: scan,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    let esc_scan = unsafe { MapVirtualKeyW(VK_ESCAPE as u32, MAPVK_VK_TO_VSC) as u16 };
+    let scan_down = KEYBD_EVENT_FLAGS(KEYEVENTF_SCANCODE.0);
+    let scan_up = KEYBD_EVENT_FLAGS(KEYEVENTF_SCANCODE.0 | KEYEVENTF_KEYUP.0);
+
+    unsafe {
+        SendInput(&[kbd_input(esc_scan, scan_down)], std::mem::size_of::<INPUT>() as i32);
+    }
+    std::thread::sleep(Duration::from_millis(50));
+    unsafe {
+        SendInput(&[kbd_input(esc_scan, scan_up)], std::mem::size_of::<INPUT>() as i32);
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn send_esc_to_scum() -> Result<(), String> {
     Err("Nicht unterstützt auf dieser Plattform".to_string())
 }
 
@@ -850,20 +1112,67 @@ fn ensure_lowres_tiles(tiles_dir: &PathBuf) {
     }
 }
 
-#[tauri::command]
-fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
-    let _ = app_handle.emit("hires-download-progress", "Lade tiles-hires.zip herunter...");
-    let response = reqwest::blocking::get(HIRES_TILES_URL)
-        .map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
-    let bytes = response.bytes().map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
-    let _ = app_handle.emit("hires-download-progress", format!("ZIP geladen ({} MB), entpacke...", bytes.len() / 1024 / 1024));
+fn emit_hires_progress(app_handle: &tauri::AppHandle, phase: &str, percent: f64, text: String) {
+    let _ = app_handle.emit("hires-download-progress", serde_json::json!({
+        "phase": phase,
+        "percent": percent,
+        "text": text,
+    }));
+}
 
-    let cursor = std::io::Cursor::new(bytes);
+#[tauri::command]
+async fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
+    emit_hires_progress(&app_handle, "download", 0.0, "Verbinde...".to_string());
+
+    // No overall request timeout here (a big ZIP can legitimately take a long time on a
+    // slow connection) - instead each individual chunk read below is bounded, so a
+    // stalled/dead connection fails with a clear error instead of hanging the download
+    // (and the "downloading..." UI) forever.
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP-Client konnte nicht erstellt werden: {}", e))?;
+
+    let mut response = client.get(HIRES_TILES_URL).send().await
+        .map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
+    let total_size = response.content_length();
+
+    let mut data = Vec::with_capacity(total_size.unwrap_or(0) as usize);
+    let mut downloaded: u64 = 0;
+    let mut last_report = std::time::Instant::now();
+    loop {
+        let chunk = match tokio::time::timeout(Duration::from_secs(30), response.chunk()).await {
+            Ok(Ok(Some(chunk))) => chunk,
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => return Err(format!("Download fehlgeschlagen: {}", e)),
+            Err(_) => return Err("Download fehlgeschlagen: keine Daten mehr empfangen (Verbindung hängt/zu langsam)".to_string()),
+        };
+        downloaded += chunk.len() as u64;
+        data.extend_from_slice(&chunk);
+        if last_report.elapsed().as_millis() >= 250 {
+            last_report = std::time::Instant::now();
+            let (percent, msg) = match total_size {
+                Some(total) if total > 0 => (
+                    (downloaded as f64 / total as f64) * 100.0,
+                    format!(
+                        "Lade tiles-hires.zip herunter ({} / {} MB)...",
+                        downloaded / 1024 / 1024, total / 1024 / 1024
+                    ),
+                ),
+                _ => (0.0, format!("Lade tiles-hires.zip herunter ({} MB)...", downloaded / 1024 / 1024)),
+            };
+            emit_hires_progress(&app_handle, "download", percent, msg);
+        }
+    }
+    emit_hires_progress(&app_handle, "extract", 0.0, format!("ZIP geladen ({} MB), entpacke...", data.len() / 1024 / 1024));
+
+    let cursor = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("ZIP konnte nicht geöffnet werden: {}", e))?;
 
     let tiles_dir = get_tiles_dir(&app_handle);
+    let total_files = archive.len();
     let mut count = 0;
-    for i in 0..archive.len() {
+    for i in 0..total_files {
         let mut file = archive.by_index(i).map_err(|e| format!("ZIP-Fehler: {}", e))?;
         let outpath = match file.enclosed_name() {
             Some(path) => tiles_dir.join(path),
@@ -879,12 +1188,13 @@ fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String> {
         let mut outfile = std::fs::File::create(&outpath).map_err(|e| e.to_string())?;
         std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
         count += 1;
-        if count % 200 == 0 {
-            let _ = app_handle.emit("hires-download-progress", format!("Entpackt: {} Dateien...", count));
+        if count % 100 == 0 || i == total_files - 1 {
+            let percent = (i as f64 + 1.0) / total_files as f64 * 100.0;
+            emit_hires_progress(&app_handle, "extract", percent, format!("Entpackt: {} Dateien...", count));
         }
     }
 
-    let _ = app_handle.emit("hires-download-progress", format!("Fertig! {} Tiles entpackt.", count));
+    emit_hires_progress(&app_handle, "done", 100.0, format!("Fertig! {} Tiles entpackt.", count));
     let _ = app_handle.emit("hires-tiles-installed", ());
     ws_broadcast(serde_json::json!(["hires-tiles-installed", null]).to_string());
     Ok(())
@@ -1023,8 +1333,7 @@ fn ws_broadcast_msg(message: String) {
     ws_broadcast(message);
 }
 
-#[tauri::command]
-fn set_poi_connections(state: State<Arc<AppState>>, app_handle: tauri::AppHandle, ids: Vec<String>) {
+pub(crate) fn apply_poi_connections(state: &Arc<AppState>, ids: Vec<String>) {
     *state.poi_connections.lock().unwrap() = ids.clone();
     {
         let mut data = state.data.lock().unwrap();
@@ -1032,8 +1341,15 @@ fn set_poi_connections(state: State<Arc<AppState>>, app_handle: tauri::AppHandle
     }
     let _ = save_data(&state.data_path, &state.data.lock().unwrap());
     let payload = serde_json::json!(["poi-connections", ids]);
-    let _ = app_handle.emit("poi-connections", &payload);
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("poi-connections", &payload);
+    }
     ws_broadcast(payload.to_string());
+}
+
+#[tauri::command]
+fn set_poi_connections(state: State<Arc<AppState>>, ids: Vec<String>) {
+    apply_poi_connections(&state, ids);
 }
 
 #[tauri::command]
@@ -1046,8 +1362,7 @@ fn get_player_position(state: State<Arc<AppState>>) -> Option<CoordRecord> {
     state.current_position.lock().unwrap().clone()
 }
 
-#[tauri::command]
-fn add_poi(state: State<Arc<AppState>>, mut poi: Poi) -> AppData {
+pub(crate) fn apply_add_poi(state: &Arc<AppState>, mut poi: Poi) -> AppData {
     if poi.category.is_empty() {
         poi.category = compute_sector(poi.x, poi.y);
     }
@@ -1055,8 +1370,16 @@ fn add_poi(state: State<Arc<AppState>>, mut poi: Poi) -> AppData {
     data.pois.push(poi);
     save_data(&state.data_path, &data);
     let clone = data.clone();
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("data-updated", &clone);
+    }
     ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
     clone
+}
+
+#[tauri::command]
+fn add_poi(state: State<Arc<AppState>>, poi: Poi) -> AppData {
+    apply_add_poi(&state, poi)
 }
 
 #[tauri::command]
@@ -1361,10 +1684,16 @@ fn main() {
                 live_tracking: Mutex::new(false),
                 current_position: Mutex::new(data.player_position.clone()),
                 poi_connections: Mutex::new(data.poi_connections.clone()),
+                big_map_active: Mutex::new(false),
+                bigmap_modal_open: Mutex::new(false),
+                app_handle: Mutex::new(None),
             });
+            *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
             #[cfg(windows)]
             start_hotkey_watcher(state.clone(), app.handle().clone());
+            #[cfg(windows)]
+            start_bigmap_hotkey_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
             let tiles_dir = get_tiles_dir(&app.handle());
             if let Err(e) = std::fs::create_dir_all(&tiles_dir) {

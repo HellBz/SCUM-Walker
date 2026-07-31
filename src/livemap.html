@@ -31,6 +31,22 @@
   </div>
   <div id="status">Warte auf Daten...</div>
   <div id="toast" class="toast"></div>
+  <div id="bigmapPoiModal" class="bigmap-modal-overlay" style="display:none;">
+    <div class="bigmap-modal">
+      <h3>POI hinzufügen</h3>
+      <label>Name</label>
+      <input type="text" id="bigmapPoiLabel" placeholder="POI Name..." autocomplete="off">
+      <label>Kategorie</label>
+      <select id="bigmapPoiCategory"></select>
+      <input type="text" id="bigmapPoiNewCategory" placeholder="Neue Kategorie..." style="display:none; margin-top:4px;">
+      <label>Farbe</label>
+      <div id="bigmapPoiColors" class="bigmap-color-row"></div>
+      <div class="bigmap-modal-buttons">
+        <button id="bigmapPoiCancel" class="bigmap-btn-cancel">Abbrechen</button>
+        <button id="bigmapPoiSave" class="bigmap-btn-save">Speichern</button>
+      </div>
+    </div>
+  </div>
   <script>window.__WS_PORT__ = "{{WS_PORT}}";</script>
   <script src="lib/leaflet.js"></script>
   <script src="lib/leaflet.markercluster.js"></script>

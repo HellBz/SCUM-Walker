@@ -1363,6 +1363,18 @@ lockOverlayBtn.addEventListener('click', async () => {
 // Hi-Res Tiles Download
 const downloadHiresBtn = document.getElementById('downloadHiresBtn');
 const hiresStatus = document.getElementById('hiresStatus');
+const hiresProgressBar = document.getElementById('hiresProgressBar');
+const hiresProgressFill = document.getElementById('hiresProgressFill');
+
+function setHiresProgress(percent) {
+  hiresProgressBar.style.display = '';
+  hiresProgressFill.style.width = Math.max(0, Math.min(100, percent)) + '%';
+}
+
+function hideHiresProgress() {
+  hiresProgressBar.style.display = 'none';
+  hiresProgressFill.style.width = '0%';
+}
 
 async function checkHiresTiles() {
   try {
@@ -1385,21 +1397,33 @@ checkHiresTiles();
 downloadHiresBtn.addEventListener('click', async () => {
   downloadHiresBtn.disabled = true;
   downloadHiresBtn.textContent = 'Lädt...';
+  setHiresProgress(0);
   try {
     await invoke('download_hires_tiles');
   } catch (err) {
     hiresStatus.textContent = 'Fehler: ' + err;
+    hideHiresProgress();
     downloadHiresBtn.disabled = false;
     downloadHiresBtn.textContent = '⬇ Hi-Res Tiles';
   }
 });
 
 window.__TAURI__.event.listen('hires-download-progress', (event) => {
-  hiresStatus.textContent = event.payload;
+  const { phase, percent, text } = event.payload;
+  hiresStatus.textContent = text;
+  if (phase === 'download') {
+    // Download is roughly the first half of the overall progress, extraction the second half.
+    setHiresProgress(percent / 2);
+  } else if (phase === 'extract') {
+    setHiresProgress(50 + percent / 2);
+  } else if (phase === 'done') {
+    setHiresProgress(100);
+  }
 });
 
 window.__TAURI__.event.listen('hires-tiles-installed', () => {
   hiresStatus.textContent = '✓ Hi-Res Tiles installiert! Karte neu laden für volle Auflösung.';
+  hideHiresProgress();
   downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
   if (tileLayer) {
     tileLayer.options.maxNativeZoom = MAX_ZOOM;

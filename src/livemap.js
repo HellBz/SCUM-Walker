@@ -22,8 +22,13 @@
   }
 
   const isTauri = typeof window.__TAURI__ !== 'undefined';
+  const isBigMap = new URLSearchParams(window.location.search).get('bigmap') === '1';
   document.body.classList.add('auto-hide-controls');
-  if (isTauri) document.body.classList.add('tauri-mode');
+  if (isTauri) {
+    document.body.classList.add('tauri-mode');
+    document.documentElement.classList.add('tauri-mode');
+  }
+  if (isBigMap) document.body.classList.add('bigmap-mode');
 
   const closeBtn = document.getElementById('overlayClose');
   const dragHandle = document.getElementById('dragHandle');
@@ -87,7 +92,7 @@
   }
 
   let showCoords = safeGetStorage('overlay.showCoords', 'true') !== 'false';
-  let followPlayer = safeGetStorage('livemap.follow', 'true') !== 'false';
+  let followPlayer = isBigMap ? false : safeGetStorage('livemap.follow', 'true') !== 'false';
   const clusterKey = isTauri ? 'overlay.clustering' : 'livemap.clustering';
   let useClustering = safeGetStorage(clusterKey, 'false') === 'true';
   const followBtn = document.getElementById('followBtn');
@@ -229,6 +234,13 @@
     zoomControl: false,
     attributionControl: false,
     preferCanvas: true,
+    dragging: !isBigMap,
+    scrollWheelZoom: !isBigMap,
+    doubleClickZoom: !isBigMap,
+    boxZoom: !isBigMap,
+    keyboard: !isBigMap,
+    touchZoom: !isBigMap,
+    tap: !isBigMap,
   });
 
   // Tile layer - created after WebSocket init provides hires status
@@ -238,6 +250,9 @@
   function initTileLayer(hasHires) {
     if (tileLayer) return; // already initialized
     if (hasHires) maxNativeZoom = MAX_ZOOM;
+    // Bigmap overlays SCUM's own map directly (visible through the transparent window),
+    // so no tile image is rendered here - only markers/connection lines on top.
+    if (isBigMap) return;
     tileLayer = L.tileLayer(API_BASE + '/tiles/{z}/{x}/{y}.png', {
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
@@ -254,16 +269,44 @@
   // Fit initial view to full map
   map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
 
+  // Bigmap mode: the window is created hidden at a placeholder size and only resized
+  // to match SCUM's window *after* this page has already loaded. Leaflet computes its
+  // container size once at creation and the DOM 'resize' event is not reliably fired by
+  // WebView2 for windows that are hidden/resized programmatically, so the map can be left
+  // rendered at its old (smaller) size, anchored top-left, with empty space on the right.
+  // A ResizeObserver watches the actual rendered box of the container directly and fires
+  // regardless of what caused the change, which is robust against this.
+  if (isBigMap) {
+    // fitBounds computes an exact fractional zoom to fill the container, but DPI/subpixel
+    // rounding between the native window size (physical px) and the webview's CSS layout
+    // (logical px) can leave a residual gap of a few pixels top/bottom. Nudging the zoom
+    // in very slightly makes the map overflow instead of underfill; #mapShell's
+    // overflow:hidden clips the negligible excess so no gap is ever visible.
+    const fitBigMapBounds = () => {
+      map.fitBounds([[0, 0], [MAP_UNITS, MAP_UNITS]]);
+      map.setZoom(map.getZoom() + 0.15, { animate: false });
+    };
+    const mapShellEl = document.getElementById('mapShell');
+    const ro = new ResizeObserver(() => {
+      map.invalidateSize();
+      fitBigMapBounds();
+    });
+    ro.observe(mapShellEl);
+    fitBigMapBounds();
+  }
+
   // Dedicated pane for player marker so it renders above POI markers
   map.createPane('liveMarkerPane');
   map.getPane('liveMarkerPane').style.zIndex = '700';
 
-  // Restore saved view
-  const savedZoom = parseInt(safeGetStorage('livemap.leafletZoom', ''));
-  const savedLat = parseFloat(safeGetStorage('livemap.leafletLat', ''));
-  const savedLng = parseFloat(safeGetStorage('livemap.leafletLng', ''));
-  if (!isNaN(savedZoom) && !isNaN(savedLat) && !isNaN(savedLng)) {
-    map.setView([savedLat, savedLng], savedZoom);
+  // Restore saved view (not in bigmap mode - it always shows the full fixed map)
+  if (!isBigMap) {
+    const savedZoom = parseInt(safeGetStorage('livemap.leafletZoom', ''));
+    const savedLat = parseFloat(safeGetStorage('livemap.leafletLat', ''));
+    const savedLng = parseFloat(safeGetStorage('livemap.leafletLng', ''));
+    if (!isNaN(savedZoom) && !isNaN(savedLat) && !isNaN(savedLng)) {
+      map.setView([savedLat, savedLng], savedZoom);
+    }
   }
 
   // Update zoom label
@@ -538,6 +581,7 @@
 
   function renderRoutes() {
     clearRoutes();
+    if (isBigMap) return;
     if (!data.routes) return;
     data.routes.forEach(route => {
       if (route.visible === false) return;
@@ -573,7 +617,26 @@
       });
       if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
 
-      if (poi.image_path) {
+      if (isBigMap) {
+        // Bigmap mode: click on a marker starts/stops the live navigation guide line to it.
+        marker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          if (connectedPoiIds.has(poi.id)) {
+            connectedPoiIds.delete(poi.id);
+            showToast('🧭 Navigation gestoppt: ' + poi.label);
+          } else {
+            connectedPoiIds.add(poi.id);
+            showToast('🧭 Navigation gestartet: ' + poi.label);
+          }
+          renderConnectionLine();
+          if (!sendWs({ type: 'set-poi-connections', ids: [...connectedPoiIds] })) {
+            console.error('set-poi-connections nicht gesendet: WebSocket nicht verbunden');
+            showToast('⚠️ Verbindung konnte nicht synchronisiert werden: keine WebSocket-Verbindung');
+          }
+        });
+      }
+
+      if (poi.image_path && !isBigMap) {
         const imgUrl = API_BASE + '/api/poi_image/' + poi.id;
         let hoverBound = false;
         marker.on('mouseover', () => {
@@ -653,6 +716,141 @@
   });
 
   map.on('dragstart', disableFollow);
+
+  // Bigmap mode: click on empty map area opens a modal to create a POI.
+  let bigmapPendingPoi = null;
+  let bigmapSelectedColor = '#ff44d3';
+  const BIGMAP_POI_COLORS = ['#ff44d3', '#ff8800', '#44cc44', '#4488ff', '#ffee00', '#ff4444', '#ffffff'];
+
+  const SECTOR_ROWS = ['D','C','B','A','Z'];
+  const SECTOR_COLS = ['4','3','2','1','0'];
+  function bigmapGetSector(x, y) {
+    const width = worldMaxX - worldMinX;
+    const height = worldMaxY - worldMinY;
+    const c = Math.min(4, Math.max(0, Math.floor((worldMaxX - x) / width * 5)));
+    const r = Math.min(4, Math.max(0, Math.floor((worldMaxY - y) / height * 5)));
+    return SECTOR_ROWS[r] + SECTOR_COLS[c];
+  }
+
+  function bigmapPopulateCategories(fallback) {
+    const cats = new Set();
+    (data.pois || []).forEach(p => { if (p.category) cats.add(p.category); });
+    if (fallback && !cats.has(fallback)) cats.add(fallback);
+    const sorted = Array.from(cats).sort();
+    const sel = document.getElementById('bigmapPoiCategory');
+    sel.innerHTML = '';
+    sorted.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      sel.appendChild(opt);
+    });
+    const neuOpt = document.createElement('option');
+    neuOpt.value = '__new__';
+    neuOpt.textContent = 'Neue Kategorie...';
+    sel.appendChild(neuOpt);
+    if (fallback) sel.value = fallback;
+    const newCatInput = document.getElementById('bigmapPoiNewCategory');
+    newCatInput.style.display = 'none';
+    newCatInput.value = '';
+  }
+
+  function bigmapBuildColorPicker() {
+    const container = document.getElementById('bigmapPoiColors');
+    container.innerHTML = '';
+    BIGMAP_POI_COLORS.forEach(c => {
+      const sw = document.createElement('div');
+      sw.className = 'bigmap-color-swatch' + (c === bigmapSelectedColor ? ' selected' : '');
+      sw.style.background = c;
+      sw.addEventListener('click', () => {
+        bigmapSelectedColor = c;
+        bigmapBuildColorPicker();
+      });
+      container.appendChild(sw);
+    });
+  }
+
+  let bigmapModalOpen = false;
+
+  function bigmapShowModal(game) {
+    bigmapPendingPoi = game;
+    const modal = document.getElementById('bigmapPoiModal');
+    const labelInput = document.getElementById('bigmapPoiLabel');
+    labelInput.value = '';
+    bigmapPopulateCategories(bigmapGetSector(game.x, game.y));
+    bigmapBuildColorPicker();
+    modal.style.display = 'flex';
+    bigmapModalOpen = true;
+    sendWs({ type: 'bigmap-modal-state', open: true });
+    labelInput.focus();
+  }
+
+  function bigmapHideModal() {
+    document.getElementById('bigmapPoiModal').style.display = 'none';
+    bigmapPendingPoi = null;
+    if (bigmapModalOpen) {
+      bigmapModalOpen = false;
+      sendWs({ type: 'bigmap-modal-state', open: false });
+    }
+  }
+
+  if (isBigMap) {
+    map.on('click', (e) => {
+      const game = latLngToGame(e.latlng.lat, e.latlng.lng);
+      bigmapShowModal(game);
+    });
+
+    document.getElementById('bigmapPoiCancel').addEventListener('click', bigmapHideModal);
+
+    document.getElementById('bigmapPoiCategory').addEventListener('change', function() {
+      const newCatInput = document.getElementById('bigmapPoiNewCategory');
+      if (this.value === '__new__') {
+        newCatInput.style.display = '';
+        newCatInput.focus();
+      } else {
+        newCatInput.style.display = 'none';
+        newCatInput.value = '';
+      }
+    });
+
+    document.getElementById('bigmapPoiSave').addEventListener('click', () => {
+      if (!bigmapPendingPoi) return;
+      const label = document.getElementById('bigmapPoiLabel').value.trim() || 'POI';
+      const catSel = document.getElementById('bigmapPoiCategory');
+      const rawCat = catSel.value === '__new__' ? document.getElementById('bigmapPoiNewCategory').value.trim() : catSel.value;
+      const category = rawCat || bigmapGetSector(bigmapPendingPoi.x, bigmapPendingPoi.y);
+      const id = String(Date.now());
+      const poi = {
+        id,
+        label,
+        x: bigmapPendingPoi.x,
+        y: bigmapPendingPoi.y,
+        type: 'manual',
+        color: bigmapSelectedColor,
+        image_path: null,
+        category,
+      };
+      if (sendWs({ type: 'add-poi', poi })) {
+        showToast('📍 Marker gesetzt: ' + label);
+      } else {
+        showToast('⚠️ Marker konnte nicht gesendet werden: keine WebSocket-Verbindung');
+      }
+      bigmapHideModal();
+    });
+
+    document.getElementById('bigmapPoiLabel').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('bigmapPoiSave').click();
+      } else if (e.key === 'Escape') {
+        e.stopPropagation();
+        bigmapHideModal();
+      }
+    });
+
+    document.getElementById('bigmapPoiModal').addEventListener('click', (e) => {
+      if (e.target.id === 'bigmapPoiModal') bigmapHideModal();
+    });
+  }
 
   function handleWsMessage(msg) {
     const raw = JSON.parse(msg);
@@ -760,10 +958,23 @@
         renderConnectionLine();
         break;
       }
+      case 'bigmap-closing': {
+        if (typeof bigmapHideModal === 'function') bigmapHideModal();
+        break;
+      }
     }
   }
 
   let pingInterval = null;
+  let activeWs = null;
+
+  function sendWs(obj) {
+    if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+      activeWs.send(JSON.stringify(obj));
+      return true;
+    }
+    return false;
+  }
 
   function connectWs() {
     let wsPort = window.__WS_PORT__ || window.location.port || '4488';
@@ -773,6 +984,7 @@
     let ws;
     try {
       ws = new WebSocket(wsUrl);
+      activeWs = ws;
     } catch (e) {
       statusEl.textContent = 'Verbindung fehlgeschlagen, versuche erneut…';
       setTimeout(connectWs, 2000);

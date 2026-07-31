@@ -293,6 +293,29 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                             let _ = socket.send(Message::Text(
                                 serde_json::json!(["pong", null]).to_string()
                             )).await;
+                        } else if text.contains("\"set-poi-connections\"") {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let Some(ids) = parsed.get("ids").and_then(|v| v.as_array()) {
+                                    let ids: Vec<String> = ids.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect();
+                                    crate::apply_poi_connections(&state, ids);
+                                }
+                            }
+                        } else if text.contains("\"add-poi\"") {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let Some(poi_value) = parsed.get("poi") {
+                                    if let Ok(poi) = serde_json::from_value::<crate::Poi>(poi_value.clone()) {
+                                        crate::apply_add_poi(&state, poi);
+                                    }
+                                }
+                            }
+                        } else if text.contains("\"bigmap-modal-state\"") {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let Some(open) = parsed.get("open").and_then(|v| v.as_bool()) {
+                                    *state.bigmap_modal_open.lock().unwrap() = open;
+                                }
+                            }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
