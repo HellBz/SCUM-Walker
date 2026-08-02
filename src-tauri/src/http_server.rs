@@ -316,6 +316,17 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                                     *state.bigmap_modal_open.lock().unwrap() = open;
                                 }
                             }
+                        } else if text.contains("\"remove-poi\"") {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let Some(id) = parsed.get("id").and_then(|v| v.as_str()) {
+                                    let mut data = state.data.lock().unwrap();
+                                    data.pois.retain(|p| p.id != id);
+                                    crate::save_data(&state.data_path, &data);
+                                    let clone = data.clone();
+                                    drop(data);
+                                    crate::ws_broadcast(serde_json::json!(["data-updated", clone]).to_string());
+                                }
+                            }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,

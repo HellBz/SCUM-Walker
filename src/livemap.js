@@ -618,9 +618,32 @@
       if (poi.label) marker.bindTooltip(poi.label, { permanent: true, direction: 'top', className: 'poi-label', offset: [0, -8] });
 
       if (isBigMap) {
+        // Bigmap mode: long-press on marker opens delete confirmation, short click toggles navigation.
+        let longPressTimer = null;
+        let longPressTriggered = false;
+
+        marker.on('mousedown', (e) => {
+          L.DomEvent.stopPropagation(e);
+          longPressTriggered = false;
+          longPressTimer = setTimeout(() => {
+            longPressTriggered = true;
+            bigmapShowDeleteModal(poi);
+          }, 600);
+        });
+
+        marker.on('mouseup', (e) => {
+          L.DomEvent.stopPropagation(e);
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        });
+
+        marker.on('mouseout', () => {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        });
+
         // Bigmap mode: click on a marker starts/stops the live navigation guide line to it.
         marker.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
+          if (longPressTriggered) { longPressTriggered = false; return; }
           if (connectedPoiIds.has(poi.id)) {
             connectedPoiIds.delete(poi.id);
             showToast('🧭 Navigation gestoppt: ' + poi.label);
@@ -794,6 +817,25 @@
     }
   }
 
+  let bigmapDeletePendingPoi = null;
+
+  function bigmapShowDeleteModal(poi) {
+    bigmapDeletePendingPoi = poi;
+    document.getElementById('bigmapDeleteLabel').textContent = poi.label || 'Unbenannter Marker';
+    document.getElementById('bigmapDeleteModal').style.display = 'flex';
+    bigmapModalOpen = true;
+    sendWs({ type: 'bigmap-modal-state', open: true });
+  }
+
+  function bigmapHideDeleteModal() {
+    document.getElementById('bigmapDeleteModal').style.display = 'none';
+    bigmapDeletePendingPoi = null;
+    if (bigmapModalOpen) {
+      bigmapModalOpen = false;
+      sendWs({ type: 'bigmap-modal-state', open: false });
+    }
+  }
+
   if (isBigMap) {
     map.on('click', (e) => {
       const game = latLngToGame(e.latlng.lat, e.latlng.lng);
@@ -849,6 +891,24 @@
 
     document.getElementById('bigmapPoiModal').addEventListener('click', (e) => {
       if (e.target.id === 'bigmapPoiModal') bigmapHideModal();
+    });
+
+    // Delete confirmation modal
+    document.getElementById('bigmapDeleteCancel').addEventListener('click', bigmapHideDeleteModal);
+
+    document.getElementById('bigmapDeleteConfirm').addEventListener('click', () => {
+      if (!bigmapDeletePendingPoi) return;
+      const poi = bigmapDeletePendingPoi;
+      if (sendWs({ type: 'remove-poi', id: poi.id })) {
+        showToast('🗑️ Marker gelöscht: ' + (poi.label || ''));
+      } else {
+        showToast('⚠️ Marker konnte nicht gelöscht werden: keine WebSocket-Verbindung');
+      }
+      bigmapHideDeleteModal();
+    });
+
+    document.getElementById('bigmapDeleteModal').addEventListener('click', (e) => {
+      if (e.target.id === 'bigmapDeleteModal') bigmapHideDeleteModal();
     });
   }
 
@@ -960,6 +1020,7 @@
       }
       case 'bigmap-closing': {
         if (typeof bigmapHideModal === 'function') bigmapHideModal();
+        if (typeof bigmapHideDeleteModal === 'function') bigmapHideDeleteModal();
         break;
       }
     }

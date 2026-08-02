@@ -30,10 +30,9 @@ use windows::Win32::Graphics::Gdi::{
     HDC, SRCCOPY,
 };
 #[cfg(windows)]
-use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
-#[cfg(windows)]
 use windows::Win32::System::Threading::{
-    OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW,
 };
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -42,11 +41,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow,
-    GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow,
+    GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow,
 };
 
 const DEFAULT_INTERVAL_SECONDS: u64 = 10;
-const SCUM_WINDOW_TITLES: &[&str] = &["SCUM", "SCUM ", "SCUM Early Access"];
+const SCUM_WINDOW_TITLES: &[&str] = &["SCUM", "SCUM ", "SCUM Early Access", "SCUM  "];
+const SCUM_PROCESS_NAMES: &[&str] = &["scum.exe", "scum-win64-shipping.exe"];
 
 // SCUM map sector grid: rows north->south D,C,B,A,Z; cols west->east 4,3,2,1,0
 const SECTOR_ROWS: &[char] = &['D', 'C', 'B', 'A', 'Z'];
@@ -148,7 +148,7 @@ fn default_hidden_categories() -> Vec<String> {
 
 pub(crate) struct AppState {
     data: Mutex<AppData>,
-    data_path: PathBuf,
+    pub(crate) data_path: PathBuf,
     recording: Mutex<bool>,
     live_tracking: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
@@ -205,7 +205,7 @@ fn load_data(path: &PathBuf) -> AppData {
     AppData::default()
 }
 
-fn save_data(path: &PathBuf, data: &AppData) {
+pub(crate) fn save_data(path: &PathBuf, data: &AppData) {
     if let Ok(json) = serde_json::to_string_pretty(data) {
         let _ = fs::write(path, json);
     }
@@ -220,7 +220,12 @@ fn find_scum_window_by_title() -> Option<HWND> {
             return Some(hwnd);
         }
     }
-    None
+    // Fallback: enumerate windows and check if title contains "SCUM"
+    let mut result: HWND = HWND(0);
+    unsafe {
+        let _ = EnumWindows(Some(enum_window_title_callback), LPARAM(&mut result as *mut _ as isize));
+    }
+    if result.0 != 0 { Some(result) } else { None }
 }
 
 #[cfg(windows)]
@@ -233,18 +238,41 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> wi
     if pid == 0 {
         return true.into();
     }
-    let Ok(hproc) = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) else {
+    // Use PROCESS_QUERY_LIMITED_INFORMATION instead of PROCESS_VM_READ -
+    // this works even when SCUM runs as admin and our app does not.
+    let Ok(hproc) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
         return true.into();
     };
-    let mut buf = [0u16; 512];
-    let len = GetModuleFileNameExW(hproc, None, &mut buf);
+    let mut buf = [0u16; 1024];
+    let mut len: u32 = buf.len() as u32;
+    let ok = QueryFullProcessImageNameW(hproc, windows::Win32::System::Threading::PROCESS_NAME_FORMAT(0), windows::core::PWSTR(buf.as_mut_ptr()), &mut len);
     let _ = CloseHandle(hproc);
-    if len == 0 {
+    if ok.is_err() || len == 0 {
         return true.into();
     }
     let path = String::from_utf16_lossy(&buf[..len as usize]);
     let lower = path.to_lowercase();
-    if lower.ends_with("scum.exe") || lower.ends_with("scum-win64-shipping.exe") {
+    let filename = lower.rsplit('\\').next().unwrap_or(&lower);
+    if SCUM_PROCESS_NAMES.iter().any(|n| filename == *n) {
+        let out = lparam.0 as *mut HWND;
+        *out = hwnd;
+        return false.into();
+    }
+    true.into()
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn enum_window_title_callback(hwnd: HWND, lparam: LPARAM) -> windows::Win32::Foundation::BOOL {
+    if !IsWindowVisible(hwnd).as_bool() {
+        return true.into();
+    }
+    let mut buf = [0u16; 256];
+    let len = GetWindowTextW(hwnd, &mut buf);
+    if len == 0 {
+        return true.into();
+    }
+    let title = String::from_utf16_lossy(&buf[..len as usize]);
+    if title.to_uppercase().contains("SCUM") {
         let out = lparam.0 as *mut HWND;
         *out = hwnd;
         return false.into();
@@ -1670,6 +1698,12 @@ fn set_overlay_clickthrough(app: tauri::AppHandle, clickthrough: bool) -> Result
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            let _ = app.get_webview_window("main").map(|w| {
+                let _ = w.show();
+                let _ = w.set_focus();
+            });
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let data_path = app.path().app_data_dir()

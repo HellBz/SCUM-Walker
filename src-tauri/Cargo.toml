@@ -1,6 +1,6 @@
 [package]
 name = "scum-walker-tauri"
-version = "0.7.6"
+version = "0.7.7"
 edition = "2021"
 rust-version = "1.77"
 
@@ -14,13 +14,14 @@ enigo = "0.2"
 arboard = "3.4"
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
-windows = { version = "0.56", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_Threading", "Win32_System_ProcessStatus"] }
+windows = { version = "0.56", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_Threading"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
 axum = { version = "0.7", features = ["ws"] }
 rfd = "0.14"
 reqwest = { version = "0.12", features = ["blocking"] }
 zip = "2.1"
+tauri-plugin-single-instance = "2"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
