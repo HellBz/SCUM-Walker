@@ -31,9 +31,11 @@ use windows::Win32::Graphics::Gdi::{
 };
 #[cfg(windows)]
 use windows::Win32::System::Threading::{
-    OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
     QueryFullProcessImageNameW,
 };
+#[cfg(windows)]
+use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
@@ -41,12 +43,24 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow,
-    GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow,
+    GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetForegroundWindow,
 };
 
 const DEFAULT_INTERVAL_SECONDS: u64 = 10;
 const SCUM_WINDOW_TITLES: &[&str] = &["SCUM", "SCUM ", "SCUM Early Access", "SCUM  "];
 const SCUM_PROCESS_NAMES: &[&str] = &["scum.exe", "scum-win64-shipping.exe"];
+
+// Erkennt SCUM-Binaries robust (z.B. auch "SCUM_Experimental.exe" oder ähnliche
+// Steam-Beta-Branch-Varianten), schließt dabei aber explizit SCUM Walker selbst
+// aus ("walker" im Dateinamen) - auch als zusätzliche Absicherung, falls sich
+// die exakte Namensliste oben mal nicht deckt.
+#[cfg(windows)]
+fn is_scum_process_filename(filename_lower: &str) -> bool {
+    if filename_lower.contains("walker") {
+        return false;
+    }
+    SCUM_PROCESS_NAMES.iter().any(|n| filename_lower == *n) || filename_lower.starts_with("scum")
+}
 
 // SCUM map sector grid: rows north->south D,C,B,A,Z; cols west->east 4,3,2,1,0
 const SECTOR_ROWS: &[char] = &['D', 'C', 'B', 'A', 'Z'];
@@ -235,7 +249,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> wi
     }
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == 0 {
+    if pid == 0 || pid == std::process::id() {
         return true.into();
     }
     // Use PROCESS_QUERY_LIMITED_INFORMATION instead of PROCESS_VM_READ -
@@ -253,7 +267,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> wi
     let path = String::from_utf16_lossy(&buf[..len as usize]);
     let lower = path.to_lowercase();
     let filename = lower.rsplit('\\').next().unwrap_or(&lower);
-    if SCUM_PROCESS_NAMES.iter().any(|n| filename == *n) {
+    if is_scum_process_filename(filename) {
         let out = lparam.0 as *mut HWND;
         *out = hwnd;
         return false.into();
@@ -272,7 +286,18 @@ unsafe extern "system" fn enum_window_title_callback(hwnd: HWND, lparam: LPARAM)
         return true.into();
     }
     let title = String::from_utf16_lossy(&buf[..len as usize]);
-    if title.to_uppercase().contains("SCUM") {
+    if !title.to_uppercase().contains("SCUM") {
+        return true.into();
+    }
+    let mut pid: u32 = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == std::process::id() {
+        return true.into();
+    }
+    // Titel allein reicht nicht (false positives z.B. durch Browser-Tabs/Chats,
+    // die "SCUM" im Titel enthalten, ohne das Spiel zu sein) -> Prozessname prüfen.
+    let (_, process_name, _) = window_process_info(hwnd);
+    if is_scum_process_filename(&process_name) {
         let out = lparam.0 as *mut HWND;
         *out = hwnd;
         return false.into();
@@ -289,8 +314,103 @@ fn find_scum_window_by_process() -> Option<HWND> {
     if result.0 == 0 { None } else { Some(result) }
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct WindowInfo {
+    hwnd: isize,
+    title: String,
+    pid: u32,
+    process_name: String,
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn enum_all_windows_callback(hwnd: HWND, lparam: LPARAM) -> windows::Win32::Foundation::BOOL {
+    if !IsWindowVisible(hwnd).as_bool() {
+        return true.into();
+    }
+    let mut buf = [0u16; 256];
+    let len = GetWindowTextW(hwnd, &mut buf);
+    if len == 0 {
+        return true.into();
+    }
+    let title = String::from_utf16_lossy(&buf[..len as usize]);
+    let (pid, process_name, _) = window_process_info(hwnd);
+    let list = &mut *(lparam.0 as *mut Vec<WindowInfo>);
+    list.push(WindowInfo { hwnd: hwnd.0, title, pid, process_name });
+    true.into()
+}
+
+// Listet alle sichtbaren Top-Level-Fenster mit Titel/PID/Prozessname auf.
+// Dient als manueller Fallback, falls die automatische SCUM-Erkennung fehlschlägt.
+#[cfg(windows)]
+#[tauri::command]
+fn list_visible_windows() -> Vec<WindowInfo> {
+    let mut result: Vec<WindowInfo> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(Some(enum_all_windows_callback), LPARAM(&mut result as *mut _ as isize));
+    }
+    result
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn list_visible_windows() -> Vec<WindowInfo> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn set_manual_scum_window(hwnd: isize) -> Result<(), String> {
+    *MANUAL_SCUM_HWND.lock().unwrap() = Some(hwnd);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn set_manual_scum_window(_hwnd: isize) -> Result<(), String> {
+    Err("Nicht unterstützt auf dieser Plattform".to_string())
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn clear_manual_scum_window() -> Result<(), String> {
+    *MANUAL_SCUM_HWND.lock().unwrap() = None;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn clear_manual_scum_window() -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn get_manual_scum_window() -> Option<isize> {
+    *MANUAL_SCUM_HWND.lock().unwrap()
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn get_manual_scum_window() -> Option<isize> {
+    None
+}
+
+#[cfg(windows)]
+static MANUAL_SCUM_HWND: Mutex<Option<isize>> = Mutex::new(None);
+
 #[cfg(windows)]
 fn find_scum_window() -> Option<HWND> {
+    {
+        let mut manual = MANUAL_SCUM_HWND.lock().unwrap();
+        if let Some(h) = *manual {
+            let hwnd = HWND(h);
+            if unsafe { IsWindow(hwnd) }.as_bool() {
+                return Some(hwnd);
+            }
+            // Manuell gewähltes Fenster existiert nicht mehr -> Override verwerfen.
+            *manual = None;
+        }
+    }
     find_scum_window_by_title().or_else(find_scum_window_by_process)
 }
 
@@ -650,11 +770,110 @@ fn start_bigmap_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandl
 }
 
 #[cfg(windows)]
+fn is_process_handle_elevated(hproc: windows::Win32::Foundation::HANDLE) -> Option<bool> {
+    let mut token = windows::Win32::Foundation::HANDLE::default();
+    unsafe { OpenProcessToken(hproc, TOKEN_QUERY, &mut token).ok()? };
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut ret_len: u32 = 0;
+    let ok = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut _ as *mut std::ffi::c_void),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut ret_len,
+        )
+    };
+    unsafe { let _ = CloseHandle(token); };
+    if ok.is_err() {
+        return None;
+    }
+    Some(elevation.TokenIsElevated != 0)
+}
+
+// Liefert (pid, process_name, window_title) für ein Fenster-Handle.
+#[cfg(windows)]
+fn window_process_info(hwnd: HWND) -> (u32, String, String) {
+    let mut buf = [0u16; 256];
+    let len = unsafe { GetWindowTextW(hwnd, &mut buf) };
+    let title = if len > 0 {
+        String::from_utf16_lossy(&buf[..len as usize])
+    } else {
+        String::from("<kein Titel>")
+    };
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)); }
+    let mut process_name = String::from("unbekannt");
+    if pid != 0 {
+        if let Ok(hproc) = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
+            let mut pbuf = [0u16; 1024];
+            let mut plen: u32 = pbuf.len() as u32;
+            let ok = unsafe {
+                QueryFullProcessImageNameW(
+                    hproc,
+                    windows::Win32::System::Threading::PROCESS_NAME_FORMAT(0),
+                    windows::core::PWSTR(pbuf.as_mut_ptr()),
+                    &mut plen,
+                )
+            };
+            if ok.is_ok() {
+                let path = String::from_utf16_lossy(&pbuf[..plen as usize]).to_lowercase();
+                process_name = path.rsplit('\\').next().unwrap_or(&path).to_string();
+            }
+            unsafe { let _ = CloseHandle(hproc); };
+        }
+    }
+    (pid, process_name, title)
+}
+
+#[cfg(windows)]
+static LAST_LOGGED_SCUM_TARGET: Mutex<Option<(u32, String)>> = Mutex::new(None);
+
+// Debug: loggt, welches Fenster/Prozess aktuell als "SCUM" angesteuert wird.
+// Hilft bei Support-Fällen, in denen die Auto-Erkennung das falsche/kein Fenster trifft.
+#[cfg(windows)]
+fn log_scum_target(hwnd: HWND) {
+    let (pid, process_name, title) = window_process_info(hwnd);
+    let key = (pid, process_name.clone());
+    let mut last = LAST_LOGGED_SCUM_TARGET.lock().unwrap();
+    if *last != Some(key.clone()) {
+        eprintln!(
+            "[scum-target] Nutze Fenster hwnd={} pid={} process=\"{}\" title=\"{}\"",
+            hwnd.0, pid, process_name, title
+        );
+        *last = Some(key);
+    }
+}
+
+// Prüft, ob SCUM mit höheren Rechten läuft als SCUM Walker selbst.
+// Falls ja, blockiert Windows UIPI unser SendInput() lautlos (kein Fehlercode!),
+// wodurch nie Koordinaten ankommen, obwohl SCUM erkannt wird und im Vordergrund ist.
+#[cfg(windows)]
+fn scum_elevation_mismatch(hwnd: HWND) -> bool {
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)); }
+    if pid == 0 {
+        return false;
+    }
+    let Ok(hproc) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else {
+        return false;
+    };
+    let scum_elevated = is_process_handle_elevated(hproc);
+    unsafe { let _ = CloseHandle(hproc); };
+    let self_elevated = is_process_handle_elevated(unsafe { GetCurrentProcess() });
+    matches!((scum_elevated, self_elevated), (Some(true), Some(false)))
+}
+
+#[cfg(windows)]
 fn send_ctrl_c_to_scum() -> Result<(), String> {
     let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden".to_string())?;
+    log_scum_target(hwnd);
     let fg = unsafe { GetForegroundWindow() };
     if fg.0 == 0 || fg != hwnd {
         return Err("SCUM ist nicht im Vordergrund".to_string());
+    }
+    if scum_elevation_mismatch(hwnd) {
+        return Err("SCUM läuft mit Administratorrechten, SCUM Walker nicht. Windows blockiert dadurch die Tastatureingabe. Bitte starte SCUM Walker ebenfalls als Administrator.".to_string());
     }
 
     fn kbd_input(scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
@@ -889,6 +1108,7 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         let mut clipboard = Clipboard::new().expect("clipboard");
         let mut last_scum_status = true;
+        let mut last_tracking_error: Option<String> = None;
         loop {
             let tracking = *state.live_tracking.lock().unwrap();
             if tracking {
@@ -903,11 +1123,18 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
-                if send_ctrl_c_to_scum().is_err() {
+                if let Err(err) = send_ctrl_c_to_scum() {
+                    if last_tracking_error.as_deref() != Some(err.as_str()) {
+                        eprintln!("[recorder] Positionsabfrage fehlgeschlagen: {}", err);
+                        let _ = app_handle.emit("tracking-error", err.clone());
+                        ws_broadcast(serde_json::json!(["tracking-error", err]).to_string());
+                        last_tracking_error = Some(err);
+                    }
                     let interval = state.data.lock().unwrap().tracking_interval;
                     thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
+                last_tracking_error = None;
                 thread::sleep(Duration::from_millis(500));
                 if let Ok(text) = clipboard.get_text() {
                     if let Some(record) = parse_clipboard(&text) {
@@ -1727,6 +1954,23 @@ fn is_scum_running() -> bool {
     scum_is_running()
 }
 
+// Debug: liefert, welches Fenster/Prozess find_scum_window() aktuell konkret
+// erkennt (oder None, falls keins gefunden wird) - im Gegensatz zu is_scum_running,
+// das nur einen bool liefert.
+#[cfg(windows)]
+#[tauri::command]
+fn get_scum_window_info() -> Option<WindowInfo> {
+    let hwnd = find_scum_window()?;
+    let (pid, process_name, title) = window_process_info(hwnd);
+    Some(WindowInfo { hwnd: hwnd.0, title, pid, process_name })
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn get_scum_window_info() -> Option<WindowInfo> {
+    None
+}
+
 #[tauri::command]
 fn copy_livemap_url() -> Result<(), String> {
     use arboard::Clipboard;
@@ -1871,7 +2115,12 @@ fn main() {
             get_overlay_config,
             reset_overlay_config,
             get_sidebar_state,
-            save_sidebar_state
+            save_sidebar_state,
+            list_visible_windows,
+            set_manual_scum_window,
+            clear_manual_scum_window,
+            get_manual_scum_window,
+            get_scum_window_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

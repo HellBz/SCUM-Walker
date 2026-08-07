@@ -20,7 +20,10 @@
     </div>
 
     <div id="status">Bereit</div>
-    <div id="scumStatus" class="scum-status running">SCUM: läuft</div>
+    <div class="scum-status-row">
+      <div id="scumStatus" class="scum-status running">SCUM läuft</div>
+      <button id="scumWindowPickerBtn" class="icon-btn" title="SCUM-Fenster manuell wählen (Debug)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg></button>
+    </div>
     <div id="toast" class="toast"></div>
 
     <div class="section">
@@ -147,6 +150,18 @@
       <div class="dialog-actions">
         <button id="clipboardCancel">Abbrechen</button>
         <button id="clipboardParse">Importieren</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="scumWindowPickerDialog" class="dialog">
+    <div class="dialog-content">
+      <h3>SCUM-Fenster manuell wählen</h3>
+      <p class="hint" style="margin-bottom:8px;">Falls SCUM nicht automatisch erkannt wird, hier das richtige Fenster/Prozess auswählen.</p>
+      <div id="scumWindowList" class="window-picker-list"></div>
+      <div class="dialog-actions">
+        <button id="scumWindowPickerAuto">Automatisch erkennen</button>
+        <button id="scumWindowPickerClose">Schließen</button>
       </div>
     </div>
   </div>

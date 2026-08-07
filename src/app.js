@@ -1568,12 +1568,92 @@ function updateScumStatus() {
   const scumStatusEl = document.getElementById('scumStatus');
   if (!scumStatusEl) return;
   if (scumRunning) {
-    scumStatusEl.textContent = 'SCUM: läuft';
+    scumStatusEl.textContent = 'SCUM läuft';
     scumStatusEl.className = 'scum-status running';
   } else {
-    scumStatusEl.textContent = 'SCUM: nicht gestartet';
+    scumStatusEl.textContent = 'SCUM nicht gestartet';
     scumStatusEl.className = 'scum-status not-running';
   }
+}
+
+// Manuelle SCUM-Fenster-Auswahl (Debug/Fallback für den Fall, dass die
+// automatische Erkennung das falsche oder kein Fenster trifft)
+const scumWindowPickerDialog = document.getElementById('scumWindowPickerDialog');
+const scumWindowListEl = document.getElementById('scumWindowList');
+const scumWindowPickerBtn = document.getElementById('scumWindowPickerBtn');
+const scumWindowPickerAutoBtn = document.getElementById('scumWindowPickerAuto');
+const scumWindowPickerCloseBtn = document.getElementById('scumWindowPickerClose');
+
+async function openScumWindowPicker() {
+  if (!scumWindowPickerDialog || !scumWindowListEl) return;
+  scumWindowPickerDialog.classList.add('open');
+  scumWindowListEl.innerHTML = '<p class="hint">Lade Fenster...</p>';
+  let windows = [];
+  let manualHwnd = null;
+  let detected = null;
+  try {
+    [windows, manualHwnd, detected] = await Promise.all([
+      invoke('list_visible_windows'),
+      invoke('get_manual_scum_window'),
+      invoke('get_scum_window_info'),
+    ]);
+  } catch (err) {
+    scumWindowListEl.innerHTML = `<p class="hint">Fehler: ${escapeHtml(String(err))}</p>`;
+    return;
+  }
+  const detectedHtml = detected
+    ? `<p class="hint">Aktuell automatisch erkannt: <strong>${escapeHtml(detected.title)}</strong> (PID ${detected.pid}, ${escapeHtml(detected.process_name)})</p>`
+    : '<p class="hint">Aktuell wird kein SCUM-Fenster automatisch erkannt.</p>';
+  if (!windows.length) {
+    scumWindowListEl.innerHTML = detectedHtml + '<p class="hint">Keine Fenster gefunden.</p>';
+    return;
+  }
+  scumWindowListEl.innerHTML = detectedHtml + windows.map(w => {
+    const isManual = manualHwnd === w.hwnd;
+    const isDetected = !manualHwnd && detected && detected.hwnd === w.hwnd;
+    const cls = isManual ? ' active' : (isDetected ? ' detected' : '');
+    const badge = isManual ? ' <span class="window-picker-badge">manuell gewählt</span>' : (isDetected ? ' <span class="window-picker-badge">automatisch erkannt</span>' : '');
+    return `
+    <div class="window-picker-item${cls}" data-hwnd="${w.hwnd}">
+      <span class="window-picker-title">${escapeHtml(w.title)}${badge}</span>
+      <span class="window-picker-meta">PID ${w.pid} · ${escapeHtml(w.process_name)}</span>
+    </div>
+  `;
+  }).join('');
+  scumWindowListEl.querySelectorAll('.window-picker-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      const hwnd = Number(el.dataset.hwnd);
+      try {
+        await invoke('set_manual_scum_window', { hwnd });
+        showToast('SCUM-Fenster manuell gesetzt');
+        scumWindowPickerDialog.classList.remove('open');
+        checkScumStatus();
+      } catch (err) {
+        showToast('Fehler: ' + err);
+      }
+    });
+  });
+}
+
+if (scumWindowPickerBtn) {
+  scumWindowPickerBtn.addEventListener('click', openScumWindowPicker);
+}
+if (scumWindowPickerCloseBtn) {
+  scumWindowPickerCloseBtn.addEventListener('click', () => {
+    scumWindowPickerDialog.classList.remove('open');
+  });
+}
+if (scumWindowPickerAutoBtn) {
+  scumWindowPickerAutoBtn.addEventListener('click', async () => {
+    try {
+      await invoke('clear_manual_scum_window');
+      showToast('Automatische SCUM-Erkennung aktiv');
+      scumWindowPickerDialog.classList.remove('open');
+      checkScumStatus();
+    } catch (err) {
+      showToast('Fehler: ' + err);
+    }
+  });
 }
 
 let toastTimer = null;
@@ -1594,6 +1674,11 @@ if (window.__TAURI__.event) {
     if (!scumRunning && isLiveTracking) {
       statusEl.textContent = 'SCUM nicht gestartet – Live-Tracking pausiert';
     }
+  });
+
+  window.__TAURI__.event.listen('tracking-error', (event) => {
+    statusEl.textContent = event.payload;
+    showToast(event.payload);
   });
 
 

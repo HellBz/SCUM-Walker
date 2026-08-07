@@ -1,0 +1,105 @@
+{
+  "input": {
+    "default_input_dir": "input",
+    "default_output_dir": "output",
+    "supported_extensions": [".png", ".jpg", ".jpeg", ".webp", ".bmp"]
+  },
+  "scaling": {
+    "reference_resolution": 4096,
+    "auto_scale": true
+  },
+  "colors": {
+    "yellow": {
+      "hsv_lower": [18, 135, 150],
+      "hsv_upper": [38, 255, 255],
+      "lab_lower": [120, 100, 155],
+      "lab_upper": [255, 160, 225],
+      "rgb_reference": [255, 212, 0],
+      "rgb_max_delta_e": 60.0,
+      "use_lab": true,
+      "use_rgb_delta_e": false
+    },
+    "white": {
+      "hsv_lower": [0, 0, 185],
+      "hsv_upper": [180, 72, 255],
+      "lab_lower": [150, 115, 115],
+      "lab_upper": [255, 155, 155],
+      "min_brightness": 185,
+      "max_saturation": 72,
+      "use_lab": true
+    },
+    "exclude": {
+      "red_hsv_ranges": [
+        [[0, 145, 120], [12, 255, 255]],
+        [[168, 145, 120], [180, 255, 255]]
+      ],
+      "orange_hsv_lower": [5, 100, 150],
+      "orange_hsv_upper": [20, 255, 255],
+      "exclude_orange": true,
+      "exclude_red": true,
+      "building_buffer_size": 25
+    }
+  },
+  "width_detection": {
+    "enabled": true,
+    "min_component_area_for_estimate": 500,
+    "fallback_main_width": 14.0,
+    "fallback_secondary_width": 8.0,
+    "quantile": 0.5,
+    "accepted_min_factor": 0.6,
+    "accepted_max_factor": 1.5
+  },
+  "mask_cleanup": {
+    "morph_close_size": 3,
+    "morph_open_size": 3,
+    "min_yellow_component_area": 8,
+    "min_white_component_area": 8,
+    "remove_large_solid_regions": true,
+    "max_solid_region_width": 80,
+    "max_solid_region_height": 80,
+    "max_solid_region_fill_ratio": 0.65,
+    "directional_gap_connect": true,
+    "gap_connect_length": 9,
+    "gap_connect_width": 3,
+    "gap_connect_angle_step": 15
+  },
+  "gap_bridging": {
+    "enabled": true,
+    "max_gap_distance": 12,
+    "tangent_angle_tolerance": 35,
+    "pixel_support_radius": 3,
+    "min_confidence": 0.5,
+    "max_bridge_distance_factor": 1.5
+  },
+  "graph": {
+    "junction_cluster_radius": 5,
+    "min_edge_length": 3,
+    "cleanup_spur_max_length": 8,
+    "cleanup_spur_min_support": 0.3,
+    "allow_multiple_islands": true,
+    "max_islands": 5,
+    "min_network_area": 150
+  },
+  "confidence": {
+    "review_threshold": 0.6,
+    "min_color_support": 0.3,
+    "min_width_consistency": 0.2,
+    "min_length": 8.0,
+    "synthetic_penalty": 0.2,
+    "low_connectivity_penalty": 0.15
+  },
+  "polyline": {
+    "simplification_epsilon": 2.0,
+    "scale_epsilon": true,
+    "preserve_endpoints": true,
+    "preserve_junctions": true,
+    "smoothing": false,
+    "smoothing_sigma": 1.0
+  },
+  "debug": {
+    "save_debug_masks": true,
+    "save_intermediate_stages": true,
+    "overlay_opacity": 0.7,
+    "log_level": "INFO"
+  }
+}

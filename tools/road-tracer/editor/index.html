@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCUM Road Editor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.0/dist/leaflet-geoman.css">
+  <style>
+    :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;--panel:rgba(20,24,31,.94);--border:rgba(255,255,255,.12);--text:#f4f6f8;--muted:#9ca8b5;--accent:#41b883;--danger:#e45858;--warn:#ff8800;--info:#00aaff}
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#0c0f14;color:var(--text)}
+    button,select,input{font:inherit}
+    #map{width:100%;height:100%;background:#0a0a1a}
+    .leaflet-container{cursor:crosshair}
+    .leaflet-control-attribution{display:none}
+    #sidebar{position:fixed;z-index:1000;top:14px;left:14px;width:340px;max-height:calc(100vh - 28px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:0 12px 36px rgba(0,0,0,.38);backdrop-filter:blur(12px)}
+    #sidebar-header{padding:14px;border-bottom:1px solid var(--border)}
+    #sidebar-header h1{margin:0 0 4px;font-size:19px}
+    #sidebar-header p{margin:0;color:var(--muted);font-size:12px;line-height:1.45}
+    .group{display:grid;gap:8px;margin-top:12px;padding:12px 14px;border-top:1px solid var(--border)}
+    .group-title{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    button,select{min-height:38px;border:1px solid var(--border);border-radius:8px;background:#242a33;color:var(--text)}
+    button{padding:8px 10px;cursor:pointer;transition:transform .08s ease,background .15s ease}
+    button:hover{background:#303844}
+    button:active{transform:translateY(1px)}
+    button.primary{background:#217a5a}
+    button.primary:hover{background:#29936c}
+    button.danger{background:#713537}
+    button.danger:hover{background:#8c4144}
+    button.warn{background:#5a4a1a}
+    button.warn:hover{background:#6a5a2a}
+    button.active{background:#00ffcc33;border-color:#00ffcc;color:#00ffcc}
+    select{width:100%;padding:0 10px}
+    #road-list{flex:1;overflow-y:auto;padding:8px 14px}
+    #road-list .road-item{padding:6px 10px;margin:2px 0;background:#1a1a3e;border:1px solid #00ffcc22;border-radius:4px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px}
+    #road-list .road-item:hover{background:#2a2a4e;border-color:#00ffcc55}
+    #road-list .road-item.selected{background:#00ffcc22;border-color:#00ffcc}
+    #road-list .road-item.review{border-color:#ff880055;background:#2a1a00}
+    #road-list .road-item.synthetic{border-color:#00aaff55;background:#001a2a}
+    #road-list .road-item .road-color{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+    #road-list .road-item .road-type{font-size:10px;color:#888;margin-left:auto}
+    #road-list .road-item .road-conf{font-size:10px;color:var(--muted)}
+    .status{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;padding:10px;border-radius:8px;background:rgba(0,0,0,.22);font-size:12px}
+    .status dt{color:var(--muted)}
+    .status dd{margin:0;text-align:right}
+    .hint{color:var(--muted);font-size:11px;line-height:1.45}
+    #map-controls{position:fixed;z-index:1000;top:14px;right:14px;display:flex;gap:6px;background:rgba(20,30,30,.85);border:1px solid #00ffcc55;border-radius:6px;padding:6px 8px}
+    #map-controls button{background:#2a2a2a;border:1px solid #00ffcc55;color:#00ffcc;border-radius:4px;cursor:pointer;padding:4px 10px;font-size:14px;min-width:32px;min-height:32px}
+    #map-controls button:hover{background:#3a3a3a}
+    #map-controls button.active{background:#00ffcc33}
+    #toast{position:fixed;z-index:1200;right:16px;bottom:16px;max-width:420px;padding:11px 14px;border:1px solid var(--border);border-radius:9px;background:rgba(18,22,28,.96);box-shadow:0 10px 32px rgba(0,0,0,.4);opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .18s ease,transform .18s ease}
+    #toast.visible{opacity:1;transform:translateY(0)}
+    .leaflet-marker-icon.road-vertex{background:#00ffcc;border:1px solid #fff;border-radius:50%;width:8px!important;height:8px!important;margin-left:-4px!important;margin-top:-4px!important;cursor:move}
+    .leaflet-marker-icon.road-vertex.endpoint{background:#ff4444;width:10px!important;height:10px!important;margin-left:-5px!important;margin-top:-5px!important}
+    .leaflet-marker-icon.road-vertex.junction{background:#ff8800;width:10px!important;height:10px!important;margin-left:-5px!important;margin-top:-5px!important}
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="map-controls">
+    <button id="zoomOut" title="Herauszoomen">−</button>
+    <button id="zoomIn" title="Hineinzoomen">+</button>
+    <button id="fitBtn" title="Gesamte Karte">⛶</button>
+    <button id="toggleRoads" title="Straßen an/aus" class="active">R</button>
+    <button id="toggleVertices" title="Vertices an/aus">V</button>
+    <button id="toggleReview" title="Review-Liste an/aus">!</button>
+  </div>
+
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <h1>SCUM Road Editor</h1>
+      <p>Kartenbild und roads.json laden, bearbeiten, exportieren.</p>
+    </div>
+    <div class="group">
+      <div class="group-title">Dateien</div>
+      <div class="row">
+        <button id="loadImageBtn">Kartenbild laden</button>
+        <button id="loadJsonBtn" class="primary">JSON laden</button>
+      </div>
+      <input id="imageInput" type="file" accept="image/*" hidden>
+      <input id="jsonInput" type="file" accept="application/json,.json" hidden>
+      <div class="row">
+        <button id="exportBtn" class="primary">Export JSON</button>
+        <button id="autoSaveBtn">Auto-Save</button>
+      </div>
+    </div>
+    <div class="group">
+      <div class="group-title">Werkzeug</div>
+      <select id="roadType">
+        <option value="main">Hauptstraße (gelb)</option>
+        <option value="secondary">Nebenstraße (weiß)</option>
+      </select>
+      <div class="row">
+        <button id="drawBtn">Neue Straße</button>
+        <button id="editBtn">Bearbeiten</button>
+      </div>
+      <div class="row">
+        <button id="deleteBtn" class="danger">Löschen</button>
+        <button id="stopBtn">Stoppen</button>
+      </div>
+    </div>
+    <div class="group">
+      <div class="group-title">Auswahl</div>
+      <div class="row">
+        <button id="splitBtn">Teilen</button>
+        <button id="joinBtn">Verbinden</button>
+      </div>
+      <div class="row">
+        <button id="applyTypeBtn">Typ ändern</button>
+        <button id="deleteSelectedBtn" class="danger">Straße löschen</button>
+      </div>
+      <div class="row">
+        <button id="confirmReviewBtn" class="primary">Als korrekt bestätigen</button>
+        <button id="rejectReviewBtn" class="danger">Segment verwerfen</button>
+      </div>
+      <div class="row">
+        <button id="undoBtn">Undo (Strg+Z)</button>
+        <button id="redoBtn">Redo (Strg+Y)</button>
+      </div>
+    </div>
+    <div id="road-list"></div>
+    <div class="group">
+      <div class="group-title">Status</div>
+      <dl class="status">
+        <dt>Straßen</dt><dd id="roadCount">0</dd>
+        <dt>Knoten</dt><dd id="nodeCount">0</dd>
+        <dt>Review</dt><dd id="reviewCount">0</dd>
+        <dt>Synth.</dt><dd id="syntheticCount">0</dd>
+        <dt>Auswahl</dt><dd id="selectionStatus">keine</dd>
+      </dl>
+      <div class="hint">Pixelkoordinaten [x, y]. Entf = löschen, Esc = stoppen, Strg+S = export, Strg+Z/Y = Undo/Redo.</div>
+    </div>
+  </aside>
+
+  <div id="review-panel" style="position:fixed;z-index:1100;top:14px;left:364px;display:none;max-height:400px;overflow-y:auto;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.35);backdrop-filter:blur(12px);min-width:260px">
+    <h3 style="margin:0 0 8px;font-size:14px">Review erforderlich</h3>
+    <div id="reviewList"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.0/dist/leaflet-geoman.min.js"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const map = L.map("map", {
+        crs: L.CRS.Simple,
+        minZoom: -4, maxZoom: 8,
+        zoomControl: false, attributionControl: false, preferCanvas: true,
+      });
+      map.fitBounds([[0, 0], [4096, 4096]]);
+
+      map.pm.addControls({
+        position: 'topright', drawCircle: false, drawCircleMarker: false,
+        drawMarker: false, drawPolygon: false, drawRectangle: false,
+        cutPolygon: false, rotateMode: false, dragMode: false,
+      });
+      map.pm.setLang('de');
+
+      const state = {
+        roads: [],
+        nodes: [],
+        nextRoadId: 1,
+        nextNodeId: 0,
+        selectedRoadId: null,
+        imageLayer: null,
+        imageHeight: 4096,
+        roadsVisible: true,
+        verticesVisible: false,
+        reviewPanelVisible: false,
+        autoSave: false,
+        undoStack: [],
+        redoStack: [],
+        editMode: false,
+        drawType: 'main',
+        roadLayers: new Map(),
+        vertexMarkers: [],
+        selectedForJoin: null,
+      };
+
+      const ui = {};
+      ['loadImageBtn','loadJsonBtn','imageInput','jsonInput','exportBtn','autoSaveBtn',
+       'roadType','drawBtn','editBtn','deleteBtn','stopBtn',
+       'splitBtn','joinBtn','applyTypeBtn','deleteSelectedBtn',
+       'confirmReviewBtn','rejectReviewBtn','undoBtn','redoBtn',
+       'roadCount','nodeCount','reviewCount','syntheticCount','selectionStatus',
+       'roadList','toast','zoomIn','zoomOut','fitBtn',
+       'toggleRoads','toggleVertices','toggleReview','reviewList','reviewPanel'
+      ].forEach(id => ui[id] = document.getElementById(id));
+
+      function showToast(msg) {
+        ui.toast.textContent = msg;
+        ui.toast.classList.add('visible');
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => ui.toast.classList.remove('visible'), 2600);
+      }
+
+      function pushUndo() {
+        state.undoStack.push(JSON.stringify({ roads: state.roads, nodes: state.nodes }));
+        if (state.undoStack.length > 50) state.undoStack.shift();
+        state.redoStack = [];
+      }
+
+      function undo() {
+        if (!state.undoStack.length) { showToast('Nichts zu undo.'); return; }
+        state.redoStack.push(JSON.stringify({ roads: state.roads, nodes: state.nodes }));
+        const snap = JSON.parse(state.undoStack.pop());
+        state.roads = snap.roads; state.nodes = snap.nodes;
+        renderAll();
+        showToast('Undo.');
+      }
+
+      function redo() {
+        if (!state.redoStack.length) { showToast('Nichts zu redo.'); return; }
+        state.undoStack.push(JSON.stringify({ roads: state.roads, nodes: state.nodes }));
+        const snap = JSON.parse(state.redoStack.pop());
+        state.roads = snap.roads; state.nodes = snap.nodes;
+        renderAll();
+        showToast('Redo.');
+      }
+
+      function autoSaveIfEnabled() {
+        if (!state.autoSave) return;
+        try {
+          localStorage.setItem('scum_road_editor_autosave', JSON.stringify({ roads: state.roads, nodes: state.nodes }));
+        } catch(e) {}
+      }
+
+      function getRoadStyle(road, selected) {
+        if (road.review_required) return { color: '#ff8800', weight: selected ? 7 : 5, opacity: 0.9, dashArray: '8 4' };
+        if (road.synthetic) return { color: '#00aaff', weight: selected ? 7 : 5, opacity: 0.9, dashArray: '4 4' };
+        if (road.type === 'main') return { color: '#ffd400', weight: selected ? 7 : 5, opacity: 1 };
+        return { color: '#ffffff', weight: selected ? 5 : 3, opacity: 1 };
+      }
+
+      function pointsToLatLngs(points) {
+        return points.map(([x, y]) => [state.imageHeight - y, x]);
+      }
+
+      function latLngsToPoints(latlngs) {
+        return latlngs.map(({ lat, lng }) => [Math.round(lng), Math.round(state.imageHeight - lat)]);
+      }
+
+      function renderAll() {
+        renderRoads();
+        renderRoadList();
+        renderReviewList();
+        updateStatus();
+        autoSaveIfEnabled();
+      }
+
+      function renderRoads() {
+        state.roadLayers.forEach(l => map.removeLayer(l));
+        state.roadLayers.clear();
+        state.vertexMarkers.forEach(m => map.removeLayer(m));
+        state.vertexMarkers = [];
+
+        state.roads.forEach(road => {
+          if (!road.points || road.points.length < 2) return;
+          const latlngs = pointsToLatLngs(road.points);
+          const selected = road.id === state.selectedRoadId;
+          const layer = L.polyline(latlngs, getRoadStyle(road, selected));
+          if (state.roadsVisible) layer.addTo(map);
+          layer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectRoad(road.id); });
+          state.roadLayers.set(road.id, layer);
+
+          if (state.verticesVisible && selected) {
+            latlngs.forEach((ll, i) => {
+              const isEndpoint = i === 0 || i === latlngs.length - 1;
+              const marker = L.marker(ll, {
+                icon: L.divIcon({ className: 'road-vertex' + (isEndpoint ? ' endpoint' : ''), iconSize: [8, 8], iconAnchor: [4, 4] }),
+                draggable: true,
+              });
+              marker.on('drag', (e) => {
+                const newPts = latLngsToPoints(layer.getLatLngs());
+                road.points = newPts;
+                layer.setLatLngs(pointsToLatLngs(newPts));
+              });
+              marker.on('dragend', () => { pushUndo(); autoSaveIfEnabled(); });
+              marker.addTo(map);
+              state.vertexMarkers.push(marker);
+            });
+          }
+        });
+      }
+
+      function renderRoadList() {
+        ui.roadList.innerHTML = '';
+        state.roads.forEach(road => {
+          const item = document.createElement('div');
+          item.className = 'road-item';
+          if (road.id === state.selectedRoadId) item.classList.add('selected');
+          if (road.review_required) item.classList.add('review');
+          if (road.synthetic) item.classList.add('synthetic');
+          const color = road.type === 'main' ? '#ffd400' : '#ffffff';
+          const conf = road.confidence !== undefined ? road.confidence.toFixed(2) : '1.00';
+          item.innerHTML = `<div class="road-color" style="background:${color}"></div><span>#${road.id}</span><span class="road-type">${road.type}</span><span class="road-conf">${conf}</span>`;
+          item.addEventListener('click', () => selectRoad(road.id));
+          ui.roadList.appendChild(item);
+        });
+      }
+
+      function renderReviewList() {
+        ui.reviewList.innerHTML = '';
+        const reviewRoads = state.roads.filter(r => r.review_required);
+        if (!reviewRoads.length) {
+          ui.reviewList.innerHTML = '<p style="color:var(--muted);font-size:12px">Keine Review-Items.</p>';
+        } else {
+          reviewRoads.forEach(road => {
+            const item = document.createElement('div');
+            item.className = 'road-item review';
+            item.innerHTML = `<span>#${road.id}</span><span class="road-type">${road.type}</span><span class="road-conf">conf=${road.confidence?.toFixed(2)}</span>`;
+            item.addEventListener('click', () => selectRoad(road.id));
+            ui.reviewList.appendChild(item);
+          });
+        }
+      }
+
+      function updateStatus() {
+        const main = state.roads.filter(r => r.type === 'main').length;
+        const secondary = state.roads.filter(r => r.type === 'secondary').length;
+        ui.roadCount.textContent = state.roads.length;
+        ui.nodeCount.textContent = state.nodes.length;
+        ui.reviewCount.textContent = state.roads.filter(r => r.review_required).length;
+        ui.syntheticCount.textContent = state.roads.filter(r => r.synthetic).length;
+        const sel = state.roads.find(r => r.id === state.selectedRoadId);
+        ui.selectionStatus.textContent = sel ? `#${sel.id} · ${sel.type}` : 'keine';
+      }
+
+      function selectRoad(id) {
+        state.selectedRoadId = id;
+        renderAll();
+      }
+
+      function deleteRoad(id) {
+        pushUndo();
+        state.roads = state.roads.filter(r => r.id !== id);
+        if (state.selectedRoadId === id) state.selectedRoadId = null;
+        renderAll();
+        showToast('Straße gelöscht.');
+      }
+
+      function splitRoad() {
+        const road = state.roads.find(r => r.id === state.selectedRoadId);
+        if (!road || road.points.length < 4) { showToast('Straße zu kurz zum Teilen.'); return; }
+        pushUndo();
+        const mid = Math.floor(road.points.length / 2);
+        const newId = state.nextRoadId++;
+        const newRoad = { ...road, id: newId, points: road.points.slice(mid) };
+        road.points = road.points.slice(0, mid + 1);
+        state.roads.push(newRoad);
+        renderAll();
+        showToast(`Straße geteilt: #${road.id} + #${newId}`);
+      }
+
+      function joinRoads() {
+        if (!state.selectedForJoin) {
+          const road = state.roads.find(r => r.id === state.selectedRoadId);
+          if (!road) { showToast('Erst Straße auswählen.'); return; }
+          state.selectedForJoin = road.id;
+          showToast('Erste Straße gewählt. Zweite auswählen und erneut klicken.');
+          return;
+        }
+        const r1 = state.roads.find(r => r.id === state.selectedForJoin);
+        const r2 = state.roads.find(r => r.id === state.selectedRoadId);
+        if (!r1 || !r2 || r1 === r2) { state.selectedForJoin = null; showToast('Ungültige Auswahl.'); return; }
+        pushUndo();
+        r1.points = r1.points.concat(r2.points);
+        state.roads = state.roads.filter(r => r.id !== r2.id);
+        state.selectedForJoin = null;
+        renderAll();
+        showToast(`Straßen verbunden: #${r1.id} + #${r2.id}`);
+      }
+
+      function applyType() {
+        const road = state.roads.find(r => r.id === state.selectedRoadId);
+        if (!road) { showToast('Erst Straße auswählen.'); return; }
+        pushUndo();
+        road.type = ui.roadType.value;
+        renderAll();
+        showToast('Typ geändert.');
+      }
+
+      function confirmReview() {
+        const road = state.roads.find(r => r.id === state.selectedRoadId);
+        if (!road) { showToast('Erst Straße auswählen.'); return; }
+        pushUndo();
+        road.review_required = false;
+        road.confidence = 1.0;
+        renderAll();
+        showToast('Als korrekt bestätigt.');
+      }
+
+      function rejectReview() {
+        const road = state.roads.find(r => r.id === state.selectedRoadId);
+        if (!road) { showToast('Erst Straße auswählen.'); return; }
+        deleteRoad(road.id);
+      }
+
+      function importData(data) {
+        if (data.image && data.image.height) {
+          state.imageHeight = data.image.height;
+        }
+        // Support both v1 and v2 formats
+        if (data.format === 'scum-road-network' && data.version >= 2) {
+          state.roads = data.roads || [];
+          state.nodes = data.nodes || [];
+        } else {
+          // Migrate v1 to v2
+          const nodeMap = {};
+          state.nodes = [];
+          state.roads = [];
+          let nextNode = 0;
+          (data.roads || []).forEach((r, i) => {
+            if (r.type === 'rail') return;
+            const type = r.type === 'mixed' ? 'secondary' : (r.type || 'secondary');
+            state.roads.push({
+              id: r.id || (i + 1),
+              type: type,
+              from: 0, to: 0,
+              points: r.points || [],
+              confidence: 1.0,
+              review_required: false,
+              synthetic: false,
+              length_pixels: r.length_pixels || 0,
+            });
+          });
+        }
+        state.nextRoadId = Math.max(0, ...state.roads.map(r => r.id)) + 1;
+        state.selectedRoadId = null;
+        state.undoStack = [];
+        state.redoStack = [];
+        renderAll();
+        showToast(`${state.roads.length} Straßen geladen.`);
+      }
+
+      function buildExportData() {
+        return {
+          format: "scum-road-network",
+          version: 2,
+          source_image: "editor_export",
+          image: { width: 0, height: 0 },
+          coordinate_system: { origin: "top-left", point_order: ["x", "y"], x_direction: "right", y_direction: "down" },
+          detected_widths: {},
+          nodes: state.nodes,
+          roads: state.roads.map(r => ({
+            id: r.id, type: r.type, from: r.from || 0, to: r.to || 0,
+            points: r.points, confidence: r.confidence ?? 1.0,
+            review_required: r.review_required ?? false, synthetic: r.synthetic ?? false,
+            length_pixels: r.length_pixels || 0,
+          })),
+          statistics: {
+            node_count: state.nodes.length,
+            road_count: state.roads.length,
+            main_count: state.roads.filter(r => r.type === 'main').length,
+            secondary_count: state.roads.filter(r => r.type === 'secondary').length,
+            review_required_count: state.roads.filter(r => r.review_required).length,
+            synthetic_count: state.roads.filter(r => r.synthetic).length,
+          },
+          settings: {},
+        };
+      }
+
+      function downloadJson(data) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'scum_map_roads_edited.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      // === Event handlers ===
+      ui.loadImageBtn.addEventListener('click', () => ui.imageInput.click());
+      ui.imageInput.addEventListener('change', async () => {
+        const file = ui.imageInput.files?.[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          if (state.imageLayer) map.removeLayer(state.imageLayer);
+          state.imageHeight = img.height;
+          const bounds = [[0, 0], [img.height, img.width]];
+          state.imageLayer = L.imageOverlay(url, bounds).addTo(map);
+          map.fitBounds(bounds);
+          renderAll();
+          showToast(`Kartenbild geladen: ${img.width}x${img.height}`);
+          URL.revokeObjectURL(url);
+        };
+        img.src = url;
+        ui.imageInput.value = '';
+      });
+
+      ui.loadJsonBtn.addEventListener('click', () => ui.jsonInput.click());
+      ui.jsonInput.addEventListener('change', async () => {
+        const file = ui.jsonInput.files?.[0];
+        if (!file) return;
+        try { importData(JSON.parse(await file.text())); }
+        catch (err) { showToast('JSON Fehler: ' + err.message); }
+        ui.jsonInput.value = '';
+      });
+
+      ui.exportBtn.addEventListener('click', () => { downloadJson(buildExportData()); showToast('Exportiert.'); });
+
+      ui.autoSaveBtn.addEventListener('click', (e) => {
+        state.autoSave = !state.autoSave;
+        e.target.classList.toggle('active', state.autoSave);
+        if (state.autoSave) {
+          autoSaveIfEnabled();
+          showToast('Auto-Save aktiviert.');
+        } else {
+          localStorage.removeItem('scum_road_editor_autosave');
+          showToast('Auto-Save deaktiviert.');
+        }
+      });
+
+      ui.drawBtn.addEventListener('click', () => {
+        map.pm.disableGlobalEditMode();
+        map.pm.disableGlobalRemovalMode();
+        const type = ui.roadType.value;
+        map.pm.enableDraw('Line', {
+          snappable: true, snapDistance: 12, allowSelfIntersection: false, finishOn: 'dblclick',
+          templineStyle: getRoadStyle({ type, review_required: false, synthetic: false }, false),
+          hintlineStyle: { color: '#4fd1c5', dashArray: '5 5' },
+          pathOptions: getRoadStyle({ type, review_required: false, synthetic: false }, false),
+        });
+      });
+
+      ui.editBtn.addEventListener('click', () => {
+        map.pm.disableDraw();
+        map.pm.disableGlobalRemovalMode();
+        if (!state.selectedRoadId) {
+          showToast('Erst eine Straße auswählen, dann Bearbeiten.');
+          return;
+        }
+        // Use the lightweight custom vertex editor (only for the selected road)
+        // instead of Geoman's enableGlobalEditMode, which creates vertex handles
+        // for ALL roads at once and can freeze/crash the browser with many roads.
+        state.editMode = true;
+        state.verticesVisible = true;
+        ui.toggleVertices.classList.add('active');
+        renderRoads();
+        showToast('Punkte der ausgewählten Straße ziehen zum Bearbeiten.');
+      });
+
+      ui.deleteBtn.addEventListener('click', () => {
+        map.pm.disableDraw();
+        map.pm.disableGlobalEditMode();
+        map.pm.enableGlobalRemovalMode();
+      });
+
+      ui.stopBtn.addEventListener('click', () => {
+        map.pm.disableDraw();
+        map.pm.disableGlobalEditMode();
+        map.pm.disableGlobalRemovalMode();
+        state.editMode = false;
+        showToast('Bearbeitung beendet.');
+      });
+
+      ui.splitBtn.addEventListener('click', splitRoad);
+      ui.joinBtn.addEventListener('click', joinRoads);
+      ui.applyTypeBtn.addEventListener('click', applyType);
+      ui.deleteSelectedBtn.addEventListener('click', () => {
+        if (state.selectedRoadId) deleteRoad(state.selectedRoadId);
+        else showToast('Erst Straße auswählen.');
+      });
+      ui.confirmReviewBtn.addEventListener('click', confirmReview);
+      ui.rejectReviewBtn.addEventListener('click', rejectReview);
+      ui.undoBtn.addEventListener('click', undo);
+      ui.redoBtn.addEventListener('click', redo);
+
+      ui.zoomIn.addEventListener('click', () => map.zoomIn());
+      ui.zoomOut.addEventListener('click', () => map.zoomOut());
+      ui.fitBtn.addEventListener('click', () => {
+        if (state.imageLayer) map.fitBounds(state.imageLayer.getBounds());
+        else map.fitBounds([[0, 0], [4096, 4096]]);
+      });
+
+      ui.toggleRoads.addEventListener('click', (e) => {
+        state.roadsVisible = !state.roadsVisible;
+        e.target.classList.toggle('active', state.roadsVisible);
+        renderRoads();
+      });
+
+      ui.toggleVertices.addEventListener('click', (e) => {
+        state.verticesVisible = !state.verticesVisible;
+        e.target.classList.toggle('active', state.verticesVisible);
+        renderRoads();
+      });
+
+      ui.toggleReview.addEventListener('click', (e) => {
+        state.reviewPanelVisible = !state.reviewPanelVisible;
+        e.target.classList.toggle('active', state.reviewPanelVisible);
+        ui.reviewPanel.style.display = state.reviewPanelVisible ? 'block' : 'none';
+      });
+
+      map.on('click', () => { state.selectedRoadId = null; renderAll(); });
+
+      map.on('pm:create', (e) => {
+        const layer = e.layer;
+        if (!(layer instanceof L.Polyline)) { map.removeLayer(layer); return; }
+        pushUndo();
+        const points = latLngsToPoints(layer.getLatLngs());
+        const newRoad = {
+          id: state.nextRoadId++,
+          type: ui.roadType.value,
+          from: 0, to: 0,
+          points: points,
+          confidence: 1.0,
+          review_required: false,
+          synthetic: false,
+          length_pixels: 0,
+        };
+        state.roads.push(newRoad);
+        map.removeLayer(layer);
+        renderAll();
+        showToast(`Neue Straße #${newRoad.id} erstellt.`);
+      });
+
+      map.on('pm:edit', (e) => {
+        // Handle edit completion for existing roads
+        pushUndo();
+        // The pm:edit event fires after editing; we need to sync points back
+        // This is handled by vertex drag events for selected roads
+      });
+
+      map.on('pm:remove', (e) => {
+        // Find and remove the road that matches the removed layer
+        pushUndo();
+        renderAll();
+      });
+
+      // Keyboard shortcuts
+      window.addEventListener('keydown', (e) => {
+        const t = e.target;
+        if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
+        if (e.key === 'Delete' && state.selectedRoadId) { deleteRoad(state.selectedRoadId); showToast('Gelöscht.'); }
+        if (e.key === 'Escape') { map.pm.disableDraw(); map.pm.disableGlobalEditMode(); map.pm.disableGlobalRemovalMode(); state.selectedRoadId = null; renderAll(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); downloadJson(buildExportData()); showToast('Exportiert.'); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+        if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+      });
+
+      // Try to load auto-saved data
+      try {
+        const saved = localStorage.getItem('scum_road_editor_autosave');
+        if (saved) {
+          const data = JSON.parse(saved);
+          state.roads = data.roads || [];
+          state.nodes = data.nodes || [];
+          state.nextRoadId = Math.max(0, ...state.roads.map(r => r.id)) + 1;
+          renderAll();
+          showToast('Auto-Save wiederhergestellt.');
+        }
+      } catch(e) {}
+
+      renderAll();
+      showToast('Kartenbild und JSON laden zum Starten.');
+    })();
+  </script>
+</body>
+</html>

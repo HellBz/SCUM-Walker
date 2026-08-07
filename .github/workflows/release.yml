@@ -22,7 +22,6 @@ jobs:
           - platform: macos-latest
             args: ''
     runs-on: ${{ matrix.platform }}
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,7 +29,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -53,10 +52,6 @@ jobs:
           echo "Setting version to $VERSION"
           sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
           sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
-
-      - name: Install frontend deps
-        run: npm ci
-        continue-on-error: true
 
       - name: Build Tauri app (Windows - with release upload)
         if: matrix.platform == 'windows-latest'
@@ -107,7 +102,9 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/app/*.app
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/release/bundle/app/*.app.tar.gz
             src-tauri/target/release/bundle/app/*.app.tar.gz.sig
           if-no-files-found: ignore
 
@@ -151,9 +148,10 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            artifacts/*.deb
-            artifacts/*.rpm
-            artifacts/*.AppImage
-            artifacts/*.dmg
-            artifacts/*.app
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.app.tar.gz.sig
             artifacts/tiles-hires.zip
