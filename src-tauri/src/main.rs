@@ -692,6 +692,19 @@ fn send_ctrl_c_to_scum() -> Result<(), String> {
     }
     std::thread::sleep(Duration::from_millis(50));
 
+    // Sicherheitsnetz: Falls durch einen Lag das Up-Event nicht verarbeitet wurde
+    // und eine der beiden Tasten laut GetAsyncKeyState noch als gedrückt gilt
+    // (z. B. Ctrl bliebe als Dauer-Ducken hängen), erneut Up nachsenden.
+    if is_key_pressed(VK_CONTROL.0) || is_key_pressed(VK_C.0) {
+        unsafe {
+            SendInput(
+                &[kbd_input(c_scan, scan_up), kbd_input(ctrl_scan, scan_up)],
+                std::mem::size_of::<INPUT>() as i32,
+            );
+        }
+        std::thread::sleep(Duration::from_millis(30));
+    }
+
     Ok(())
 }
 
@@ -852,12 +865,20 @@ fn capture_scum_window() -> Option<image::RgbaImage> {
 fn capture_scum_window() -> Option<image::RgbaImage> { None }
 
 #[tauri::command]
-fn get_current_location() -> Result<CoordRecord, String> {
-    send_ctrl_c_to_scum()?;
-    std::thread::sleep(Duration::from_millis(300));
-    let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
-    let text = clipboard.get_text().map_err(|e| e.to_string())?;
-    parse_clipboard(&text).ok_or_else(|| "Keine gültigen Koordinaten in der Zwischenablage".to_string())
+fn get_current_location(state: State<Arc<AppState>>) -> Result<CoordRecord, String> {
+    if send_ctrl_c_to_scum().is_ok() {
+        std::thread::sleep(Duration::from_millis(300));
+        if let Ok(mut clipboard) = Clipboard::new() {
+            if let Ok(text) = clipboard.get_text() {
+                if let Some(record) = parse_clipboard(&text) {
+                    return Ok(record);
+                }
+            }
+        }
+    }
+    state
+        .current_position()
+        .ok_or_else(|| "Keine Koordinaten verfügbar: SCUM ist nicht im Vordergrund und es liegt keine zuletzt bekannte Position vor".to_string())
 }
 
 fn scum_is_running() -> bool {
@@ -1503,6 +1524,49 @@ fn upload_poi_image(state: State<Arc<AppState>>, id: String, base64_data: String
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SidebarState {
+    #[serde(default)]
+    livemap_collapsed: bool,
+    #[serde(default)]
+    routes_collapsed: bool,
+    #[serde(default)]
+    pois_collapsed: bool,
+}
+
+fn sidebar_state_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path().app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("sidebar_state.json")
+}
+
+fn load_sidebar_state(path: &PathBuf) -> SidebarState {
+    if !path.exists() {
+        return SidebarState::default();
+    }
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_sidebar_state_file(path: &PathBuf, state: &SidebarState) {
+    if let Ok(json) = serde_json::to_string_pretty(state) {
+        let _ = fs::write(path, json);
+    }
+}
+
+#[tauri::command]
+fn get_sidebar_state(app: tauri::AppHandle) -> SidebarState {
+    load_sidebar_state(&sidebar_state_path(&app))
+}
+
+#[tauri::command]
+fn save_sidebar_state(app: tauri::AppHandle, state: SidebarState) -> Result<(), String> {
+    save_sidebar_state_file(&sidebar_state_path(&app), &state);
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct OverlayConfig {
     x: Option<i32>,
     y: Option<i32>,
@@ -1805,7 +1869,9 @@ fn main() {
             save_overlay_config,
             save_overlay_state,
             get_overlay_config,
-            reset_overlay_config
+            reset_overlay_config,
+            get_sidebar_state,
+            save_sidebar_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

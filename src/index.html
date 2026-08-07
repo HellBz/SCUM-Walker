@@ -15,7 +15,7 @@
   <div id="sidebar">
     <div class="sidebar-title">
       <span class="brand">SCUM Walker</span>
-      <span id="versionBadge" class="version-badge">v0.6.2</span>
+      <span id="versionBadge" class="version-badge">v0.7.8</span>
       <a id="updateLink" class="update-link" href="#" style="display:none">Update verfügbar</a>
     </div>
 
@@ -24,7 +24,10 @@
     <div id="toast" class="toast"></div>
 
     <div class="section">
-      <h3>Live-Map</h3>
+      <div class="section-header collapsible" id="livemapSectionHeader">
+        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span> Live-Map / Overlay</h3>
+      </div>
+      <div id="livemapSectionBody">
       <div class="button-row">
         <button id="toggleLiveTracking">Live-Tracking starten</button>
         <input id="trackingInterval" type="number" min="1" max="60" value="10" title="Update-Intervall in Sekunden" style="width:50px">s
@@ -52,28 +55,40 @@
       <div id="hiresProgressBar" class="progress-bar" style="display:none">
         <div id="hiresProgressFill" class="progress-fill"></div>
       </div>
-    </div>
-
-    <div class="section">
-      <div class="section-header">
-        <h3>Routen</h3>
-        <button id="addRouteBtn" class="icon-btn" title="Neue Route"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
-      </div>
-      <div id="routeList"></div>
-      <div class="export-row">
-        <button id="exportJson">JSON exportieren</button>
-        <button id="exportCsv">CSV exportieren</button>
       </div>
     </div>
 
     <div class="section">
-      <h3>POIs</h3>
+      <div class="section-header collapsible" id="routesSectionHeader">
+        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19c6 0 3-14 9-14"/></svg></span> Routen</h3>
+      </div>
+      <div id="routesSectionBody">
+        <div class="poi-add-buttons">
+          <button id="addRouteBtn" title="Neue Route"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Neue Route</button>
+        </div>
+        <div id="routeList"></div>
+        <div class="export-row">
+          <button id="exportJson">JSON exportieren</button>
+          <button id="exportCsv">CSV exportieren</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header collapsible" id="poisSectionHeader">
+        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span> POIs</h3>
+      </div>
+      <div id="poisSectionBody">
       <div class="poi-filter-row">
         <select id="poiCategoryFilter"><option value="">Alle Kategorien</option></select>
       </div>
-      <button id="addPoiFromLocation">Aktuelle Position als POI</button>
+      <div class="poi-add-buttons">
+        <button id="addPoiFromLocation" title="Aktuelle Position als POI"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg> Position</button>
+        <button id="addPoiFromClipboard" title="POI aus Zwischenablage importieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Clipboard</button>
+      </div>
       <p class="hint">Oder Rechtsklick auf die Karte.</p>
       <div id="poiList"></div>
+      </div>
     </div>
   </div>
 
@@ -88,6 +103,24 @@
       <button id="mapFitBtn" title="Gesamte Karte anzeigen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 4 20 10 20"/><polyline points="20 10 20 4 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
       <button id="mapClusterToggle" title="POI-Clustering an/aus"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg></button>
       <button id="mapMeasureBtn" title="Messmodus an/aus">M</button>
+    </div>
+
+    <div id="poiDialog" class="dialog">
+      <div class="dialog-content">
+        <h3 id="poiDialogTitle">POI hinzufügen</h3>
+        <input type="text" id="poiLabel" placeholder="Name" maxlength="64">
+        <label for="poiCategorySelect" class="dialog-label">Kategorie</label>
+        <select id="poiCategorySelect"></select>
+        <input type="text" id="poiCategoryInput" placeholder="Neue Kategorie" style="display:none" maxlength="32">
+        <div class="custom-color-row">
+          <input type="color" id="poiColorPicker" value="#ff44d3">
+        </div>
+        <div id="poiColors" class="color-grid"></div>
+        <div class="dialog-actions">
+          <button id="poiCancel">Abbrechen</button>
+          <button id="poiSave">Speichern</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -106,20 +139,14 @@
     </div>
   </div>
 
-  <div id="poiDialog" class="dialog">
+  <div id="clipboardDialog" class="dialog">
     <div class="dialog-content">
-      <h3 id="poiDialogTitle">POI hinzufügen</h3>
-      <input type="text" id="poiLabel" placeholder="Name" maxlength="64">
-      <label for="poiCategorySelect" class="dialog-label">Kategorie</label>
-      <select id="poiCategorySelect"></select>
-      <input type="text" id="poiCategoryInput" placeholder="Neue Kategorie" style="display:none" maxlength="32">
-      <div class="custom-color-row">
-        <input type="color" id="poiColorPicker" value="#ff44d3">
-      </div>
-      <div id="poiColors" class="color-grid"></div>
+      <h3>POI aus Zwischenablage</h3>
+      <p class="hint" style="margin-bottom:8px;">POI JSON oder SCUM-Koordinaten einfügen:</p>
+      <textarea id="clipboardInput" rows="4" placeholder='{"label":"Bunker","x":123456,"y":-789012,"color":"#ff44d3","category":"Bunker"}' style="width:100%;background:#1a1a1a;color:#ddd;border:1px solid #444;border-radius:4px;padding:8px;font-size:12px;font-family:monospace;resize:vertical;"></textarea>
       <div class="dialog-actions">
-        <button id="poiCancel">Abbrechen</button>
-        <button id="poiSave">Speichern</button>
+        <button id="clipboardCancel">Abbrechen</button>
+        <button id="clipboardParse">Importieren</button>
       </div>
     </div>
   </div>

@@ -29,6 +29,7 @@ let selectedPoiCategory = '';
 let hiddenPoiCategories = new Set();
 let pendingPoi = null;
 let editingPoiId = null;
+let pendingCrosshairMarker = null;
 let useClustering = safeGetStorage('mainmap.clustering', 'false') === 'true';
 
 let data = { routes: [], current_route_id: null, pois: [] };
@@ -85,6 +86,28 @@ function getSector(x, y) {
   const c = Math.max(0, Math.min(SECTOR_COLS.length - 1, col));
   const r = Math.max(0, Math.min(SECTOR_ROWS.length - 1, row));
   return SECTOR_ROWS[r] + SECTOR_COLS[c];
+}
+
+function showPendingCrosshair(x, y, skipFly) {
+  clearPendingCrosshair();
+  const ll = gameToLatLng(x, y);
+  pendingCrosshairMarker = L.marker(ll, {
+    icon: L.divIcon({
+      html: '<div class="pending-crosshair-inner"><div class="pending-crosshair-ring"></div></div>',
+      className: 'pending-crosshair',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    }),
+    interactive: false
+  }).addTo(map);
+  if (!skipFly) map.flyTo(ll, MAX_ZOOM, { duration: 0.8 });
+}
+
+function clearPendingCrosshair() {
+  if (pendingCrosshairMarker) {
+    map.removeLayer(pendingCrosshairMarker);
+    pendingCrosshairMarker = null;
+  }
 }
 
 function getPoiCategories() {
@@ -955,7 +978,7 @@ function renderPoiList() {
       const count = filtered.filter(p => (p.category || 'Unkategorisiert') === cat).length;
       const header = document.createElement('div');
       header.className = 'poi-group-header' + (currentCatHidden ? ' hidden' : '');
-      header.innerHTML = `<span class="poi-group-title">${cat} (${count})</span><button class="poi-visibility-toggle" data-cat="${cat}" title="${currentCatHidden ? 'Kategorie einblenden' : 'Kategorie ausblenden'}">${currentCatHidden ? eyeOff : eyeOpen}</button>`;
+      header.innerHTML = `<span class="poi-group-title"><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><svg class="poi-group-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ${cat} (${count})</span><button class="poi-visibility-toggle" data-cat="${cat}" title="${currentCatHidden ? 'Kategorie einblenden' : 'Kategorie ausblenden'}">${currentCatHidden ? eyeOff : eyeOpen}</button>`;
       poiListEl.appendChild(header);
     }
     if (currentCatHidden) return;
@@ -971,6 +994,7 @@ function renderPoiList() {
                          <button class="poi-edit" data-id="${poi.id}" title="POI bearbeiten"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Bearbeiten</button>
                          <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Screenshot aus SCUM'}">${hasImage ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'} ${hasImage ? 'Bild' : 'Screenshot'}</button>
                          <button class="poi-upload-btn" data-id="${poi.id}" title="Bild hochladen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload</button>
+                         <button class="poi-copy" data-id="${poi.id}" title="POI in Zwischenablage kopieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Kopieren</button>
                          <button class="poi-delete" data-id="${poi.id}" title="POI löschen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Löschen</button>
                        </div>
                      </span>`;
@@ -1096,6 +1120,27 @@ function renderPoiList() {
     });
   });
 
+  poiListEl.querySelectorAll('.poi-copy').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const poi = data.pois.find(p => p.id === el.dataset.id);
+      if (!poi) return;
+      const poiJson = JSON.stringify({
+        label: poi.label,
+        x: poi.x,
+        y: poi.y,
+        color: poi.color,
+        category: poi.category || ''
+      });
+      try {
+        await navigator.clipboard.writeText(poiJson);
+        statusEl.textContent = 'POI kopiert: ' + poi.label;
+      } catch (err) {
+        statusEl.textContent = 'Kopieren fehlgeschlagen: ' + err;
+      }
+    });
+  });
+
   poiListEl.querySelectorAll('.poi-visibility-toggle').forEach(el => {
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -1129,10 +1174,14 @@ function buildColorPicker(container, colors, selected, onSelect, pickerInput) {
 map.on('contextmenu', (e) => {
   const game = latLngToGame(e.latlng.lat, e.latlng.lng);
   pendingPoi = game;
+  editingPoiId = null;
+  poiDialogTitle.textContent = 'POI hinzufügen';
   poiLabelInput.value = '';
+  poiColorPicker.value = selectedPoiColor;
   populatePoiCategorySelect('', getSector(game.x, game.y));
   buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
-  poiDialog.classList.add('open');
+  showPendingCrosshair(game.x, game.y, true);
+  poiDialog.classList.add('open', 'top-left');
   poiLabelInput.focus();
 });
 
@@ -1190,7 +1239,8 @@ document.getElementById('routeSave').addEventListener('click', async () => {
 
 // POI dialog
 document.getElementById('poiCancel').addEventListener('click', () => {
-  poiDialog.classList.remove('open');
+  poiDialog.classList.remove('open', 'top-left');
+  clearPendingCrosshair();
   pendingPoi = null;
   editingPoiId = null;
 });
@@ -1211,12 +1261,85 @@ document.getElementById('addPoiFromLocation').addEventListener('click', async ()
     poiColorPicker.value = selectedPoiColor;
     populatePoiCategorySelect('', getSector(record.x, record.y));
     buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
-    poiDialog.classList.add('open');
+    showPendingCrosshair(record.x, record.y);
+    poiDialog.classList.add('open', 'top-left');
     poiLabelInput.focus();
     statusEl.textContent = `Position: X=${record.x.toFixed(0)} Y=${record.y.toFixed(0)}`;
   } catch (err) {
     statusEl.textContent = 'Fehler: ' + err;
   }
+});
+
+const clipboardDialog = document.getElementById('clipboardDialog');
+const clipboardInput = document.getElementById('clipboardInput');
+
+document.getElementById('addPoiFromClipboard').addEventListener('click', () => {
+  clipboardInput.value = '';
+  clipboardDialog.classList.add('open');
+  clipboardInput.focus();
+});
+
+document.getElementById('clipboardCancel').addEventListener('click', () => {
+  clipboardDialog.classList.remove('open');
+});
+
+document.getElementById('clipboardParse').addEventListener('click', () => {
+  const text = (clipboardInput.value || '').trim();
+  if (!text) {
+    statusEl.textContent = 'Bitte POI-Daten oder Koordinaten eingeben';
+    clipboardInput.focus();
+    return;
+  }
+
+  let poiData = null;
+
+  // Try parsing as POI JSON
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+      poiData = {
+        x: parsed.x,
+        y: parsed.y,
+        label: parsed.label || '',
+        color: parsed.color || POI_COLORS[0],
+        category: parsed.category || ''
+      };
+    }
+  } catch {}
+
+  // Try parsing as SCUM coordinate string
+  if (!poiData) {
+    const m = text.match(/\{X=([-\d.]+)\s+Y=([-\d.]+)\s+Z=([-\d.]+)/);
+    if (m) {
+      poiData = {
+        x: parseFloat(m[1]),
+        y: parseFloat(m[2]),
+        label: '',
+        color: POI_COLORS[0],
+        category: ''
+      };
+    }
+  }
+
+  if (!poiData) {
+    statusEl.textContent = 'Eingabe enthält keine gültigen Koordinaten oder POI-Daten';
+    clipboardInput.focus();
+    return;
+  }
+
+  clipboardDialog.classList.remove('open');
+  pendingPoi = { x: poiData.x, y: poiData.y };
+  editingPoiId = null;
+  poiDialogTitle.textContent = 'POI Import';
+  poiLabelInput.value = poiData.label;
+  selectedPoiColor = poiData.color;
+  poiColorPicker.value = poiData.color;
+  populatePoiCategorySelect(poiData.category, getSector(poiData.x, poiData.y));
+  buildColorPicker(poiColorsEl, POI_COLORS, selectedPoiColor, c => selectedPoiColor = c, poiColorPicker);
+  showPendingCrosshair(poiData.x, poiData.y);
+  poiDialog.classList.add('open', 'top-left');
+  poiLabelInput.focus();
+  statusEl.textContent = `Importiert: X=${poiData.x.toFixed(0)} Y=${poiData.y.toFixed(0)}`;
 });
 
 document.getElementById('poiSave').addEventListener('click', async () => {
@@ -1239,7 +1362,8 @@ document.getElementById('poiSave').addEventListener('click', async () => {
     data = await invoke('add_poi', { poi });
   }
   updateUI();
-  poiDialog.classList.remove('open');
+  poiDialog.classList.remove('open', 'top-left');
+  clearPendingCrosshair();
   pendingPoi = null;
   editingPoiId = null;
 });
@@ -1528,6 +1652,44 @@ async function exportData(format) {
 
 document.getElementById('exportJson').addEventListener('click', () => exportData('json'));
 document.getElementById('exportCsv').addEventListener('click', () => exportData('csv'));
+
+let sidebarState = { livemap_collapsed: false, routes_collapsed: false, pois_collapsed: false };
+
+function applyCollapsedState(headerId, bodyId, collapsed) {
+  const header = document.getElementById(headerId);
+  const body = document.getElementById(bodyId);
+  if (!header || !body) return;
+  header.classList.toggle('collapsed', collapsed);
+  body.classList.toggle('collapsed', collapsed);
+}
+
+function setupCollapsibleSection(headerId, bodyId, stateField) {
+  const header = document.getElementById(headerId);
+  const body = document.getElementById(bodyId);
+  if (!header || !body) return;
+  header.addEventListener('click', () => {
+    const isCollapsed = header.classList.toggle('collapsed');
+    body.classList.toggle('collapsed', isCollapsed);
+    sidebarState[stateField] = isCollapsed;
+    invoke('save_sidebar_state', { state: sidebarState }).catch(() => {});
+  });
+}
+
+async function initSidebarState() {
+  try {
+    sidebarState = await invoke('get_sidebar_state');
+  } catch {
+    sidebarState = { livemap_collapsed: false, routes_collapsed: false, pois_collapsed: false };
+  }
+  applyCollapsedState('livemapSectionHeader', 'livemapSectionBody', sidebarState.livemap_collapsed);
+  applyCollapsedState('routesSectionHeader', 'routesSectionBody', sidebarState.routes_collapsed);
+  applyCollapsedState('poisSectionHeader', 'poisSectionBody', sidebarState.pois_collapsed);
+}
+
+setupCollapsibleSection('livemapSectionHeader', 'livemapSectionBody', 'livemap_collapsed');
+setupCollapsibleSection('routesSectionHeader', 'routesSectionBody', 'routes_collapsed');
+setupCollapsibleSection('poisSectionHeader', 'poisSectionBody', 'pois_collapsed');
+initSidebarState();
 
 loadData();
 checkScumStatus();
