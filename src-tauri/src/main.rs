@@ -170,6 +170,9 @@ pub(crate) struct AppState {
     big_map_active: Mutex<bool>,
     bigmap_modal_open: Mutex<bool>,
     app_handle: Mutex<Option<tauri::AppHandle>>,
+    bigmap_center: Mutex<Option<CoordRecord>>,
+    nav_target: Mutex<Option<CoordRecord>>,
+    pub(crate) nav_target_path: PathBuf,
 }
 
 impl AppState {
@@ -222,6 +225,20 @@ fn load_data(path: &PathBuf) -> AppData {
 pub(crate) fn save_data(path: &PathBuf, data: &AppData) {
     if let Ok(json) = serde_json::to_string_pretty(data) {
         let _ = fs::write(path, json);
+    }
+}
+
+pub(crate) fn save_nav_target(path: &PathBuf, target: &Option<CoordRecord>) {
+    if let Ok(json) = serde_json::to_string_pretty(target) {
+        let _ = fs::write(path, json);
+    }
+}
+
+pub(crate) fn load_nav_target(path: &PathBuf) -> Option<CoordRecord> {
+    if let Ok(json) = fs::read_to_string(path) {
+        serde_json::from_str(&json).ok()
+    } else {
+        None
     }
 }
 
@@ -429,6 +446,8 @@ const VK_ESCAPE: u16 = 0x1B;
 const VK_RMENU: u16 = 0xA5; // right Alt / AltGr
 #[cfg(windows)]
 const VK_M: u16 = 0x4D;
+#[cfg(windows)]
+const VK_N: u16 = 0x4E;
 
 #[cfg(windows)]
 fn is_key_pressed(vk: u16) -> bool {
@@ -762,6 +781,34 @@ fn start_bigmap_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandl
                 if let Some(window) = app_handle.get_webview_window("bigmap") {
                     sync_bigmap_geometry(&window, false);
                 }
+            }
+
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
+}
+
+#[cfg(windows)]
+fn start_nav_hotkey_watcher(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut combo_down = false;
+        loop {
+            let scum_fg = is_scum_foreground();
+            let bigmap_fg = is_bigmap_foreground(&_app_handle);
+            let combo_pressed = (scum_fg || bigmap_fg) && is_key_pressed(VK_RMENU) && is_key_pressed(VK_N);
+
+            if combo_pressed && !combo_down {
+                combo_down = true;
+                if let Some(center) = state.bigmap_center.lock().unwrap().clone() {
+                    *state.nav_target.lock().unwrap() = Some(center.clone());
+                    save_nav_target(&state.nav_target_path, &Some(center.clone()));
+                    let payload = serde_json::json!({"x": center.x, "y": center.y});
+                    let _ = _app_handle.emit("nav-target", payload.clone());
+                    crate::http_server::ws_broadcast(serde_json::json!(["nav-target", payload]).to_string());
+                    eprintln!("[nav] Ziel gesetzt: x={} y={}", center.x, center.y);
+                }
+            } else if !combo_pressed {
+                combo_down = false;
             }
 
             thread::sleep(Duration::from_millis(50));
@@ -1638,6 +1685,11 @@ fn get_player_position(state: State<Arc<AppState>>) -> Option<CoordRecord> {
     state.current_position.lock().unwrap().clone()
 }
 
+#[tauri::command]
+fn get_nav_target(state: State<Arc<AppState>>) -> Option<serde_json::Value> {
+    state.nav_target.lock().unwrap().clone().map(|t| serde_json::json!({"x": t.x, "y": t.y}))
+}
+
 pub(crate) fn apply_add_poi(state: &Arc<AppState>, mut poi: Poi) -> AppData {
     if poi.category.is_empty() {
         poi.category = compute_sector(poi.x, poi.y);
@@ -2018,7 +2070,12 @@ fn main() {
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .join("scum_walker_data.json");
 
+            let nav_target_path = app.path().app_data_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("nav_target.json");
+
             let data = load_data(&data_path);
+            let saved_nav_target = load_nav_target(&nav_target_path);
             let state = Arc::new(AppState {
                 data: Mutex::new(data.clone()),
                 data_path,
@@ -2029,6 +2086,9 @@ fn main() {
                 big_map_active: Mutex::new(false),
                 bigmap_modal_open: Mutex::new(false),
                 app_handle: Mutex::new(None),
+                bigmap_center: Mutex::new(None),
+                nav_target: Mutex::new(saved_nav_target),
+                nav_target_path,
             });
             *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
@@ -2036,6 +2096,8 @@ fn main() {
             start_hotkey_watcher(state.clone(), app.handle().clone());
             #[cfg(windows)]
             start_bigmap_hotkey_watcher(state.clone(), app.handle().clone());
+            #[cfg(windows)]
+            start_nav_hotkey_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
             let tiles_dir = get_tiles_dir(&app.handle());
             if let Err(e) = std::fs::create_dir_all(&tiles_dir) {
@@ -2097,6 +2159,7 @@ fn main() {
             set_poi_connections,
             get_poi_connections,
             get_player_position,
+            get_nav_target,
             add_poi,
             update_poi,
             remove_poi,

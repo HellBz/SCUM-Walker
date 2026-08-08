@@ -323,7 +323,43 @@
     safeSetStorage('livemap.leafletLat', c.lat.toFixed(2));
     safeSetStorage('livemap.leafletLng', c.lng.toFixed(2));
     updateZoomLabel();
+    if (isBigMap && activeWs) {
+      const g = latLngToGame(c.lat, c.lng);
+      sendWs({ type: 'bigmap-center', x: g.x, y: g.y });
+    }
   });
+
+  if (isBigMap) {
+    map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
+    map.on('contextmenu', (e) => {
+      if (navMode === 'route') {
+        if (!navRouteStart) { setNavPoint(e.latlng, true); }
+        else if (!navTarget) { setNavPoint(e.latlng, false); }
+        else { clearNav(); setNavPoint(e.latlng, true); }
+      } else {
+        const g = latLngToGame(e.latlng.lat, e.latlng.lng);
+        setNavTarget(g.x, g.y);
+      }
+    });
+  }
+
+  function setNavTarget(x, y) {
+    navTarget = { x, y };
+    RoadNavigator.setTarget(x, y);
+    showToast(`🧭 Ziel gesetzt: X=${x.toFixed(0)} Y=${y.toFixed(0)}`);
+    if (navEndEl) navEndEl.textContent = `X=${x.toFixed(0)} Y=${y.toFixed(0)}`;
+    sendWs({ type: 'set-nav-target', x, y });
+    if (navMode === 'nav') updateNavRoute();
+  }
+
+  function updateNavRoute() {
+    if (!RoadNavigator.graph || !navTarget || !currentPos) {
+      if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
+      return;
+    }
+    const route = RoadNavigator.findRoute(currentPos.x, currentPos.y);
+    drawNavRoute(route);
+  }
 
   // Zoom buttons
   document.getElementById('zoomIn').addEventListener('click', () => map.zoomIn());
@@ -337,6 +373,181 @@
   let data = { routes: [], current_route_id: null, pois: [], hidden_categories: [] };
   let currentPos = null;
   let connected = false;
+
+  // Navigation state
+  let navLayer = null;
+  let navTarget = null;
+  let navStartMarker = null;
+  let navEndMarker = null;
+  let navVisible = false;
+  let navMode = 'nav';
+  let navFollow = false;
+  let navRemaining = null;
+  let navTotalDist = 0;
+
+  const toggleNavBtn = document.getElementById('toggleNav');
+  const navPanel = document.getElementById('nav-panel');
+  const navStartEl = document.getElementById('navStart');
+  const navEndEl = document.getElementById('navEnd');
+  const navInfoEl = document.getElementById('navInfo');
+  const navProgressEl = document.getElementById('navProgress');
+  const navCalcBtn = document.getElementById('navCalcBtn');
+  const navClearBtn = document.getElementById('navClearBtn');
+  const navFollowBtn = document.getElementById('navFollowBtn');
+  const navModeRoute = document.getElementById('navModeRoute');
+  const navModeNav = document.getElementById('navModeNav');
+  const navStartRow = document.getElementById('navStartRow');
+
+  if (isBigMap && toggleNavBtn) {
+    toggleNavBtn.style.display = '';
+    toggleNavBtn.addEventListener('click', () => {
+      navVisible = !navVisible;
+      toggleNavBtn.classList.toggle('active', navVisible);
+      if (navPanel) navPanel.classList.toggle('visible', navVisible);
+      if (!navVisible) clearNav();
+    });
+  }
+
+  if (navModeRoute) {
+    navModeRoute.addEventListener('click', () => {
+      navMode = 'route';
+      navModeRoute.classList.add('active');
+      navModeNav.classList.remove('active');
+      if (navStartRow) navStartRow.classList.remove('hidden');
+      if (navCalcBtn) navCalcBtn.textContent = 'Route berechnen';
+      clearNav();
+    });
+  }
+  if (navModeNav) {
+    navModeNav.addEventListener('click', () => {
+      navMode = 'nav';
+      navModeNav.classList.add('active');
+      navModeRoute.classList.remove('active');
+      if (navStartRow) navStartRow.classList.add('hidden');
+      if (navCalcBtn) navCalcBtn.textContent = 'Route neu berechnen';
+      clearNav();
+    });
+  }
+  if (navCalcBtn) {
+    navCalcBtn.addEventListener('click', () => {
+      if (navMode === 'nav') {
+        updateNavRoute();
+      } else {
+        calcRouteFromPoints();
+      }
+    });
+  }
+  if (navClearBtn) {
+    navClearBtn.addEventListener('click', clearNav);
+  }
+  if (navFollowBtn) {
+    navFollowBtn.addEventListener('click', () => {
+      navFollow = !navFollow;
+      navFollowBtn.classList.toggle('active', navFollow);
+      if (navFollow && navRemaining) updateNavProgress();
+      if (!navFollow && navProgressEl) navProgressEl.innerHTML = '';
+    });
+  }
+
+  function clearNav() {
+    if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
+    if (navStartMarker) { map.removeLayer(navStartMarker); navStartMarker = null; }
+    if (navEndMarker) { map.removeLayer(navEndMarker); navEndMarker = null; }
+    navTarget = null;
+    navRemaining = null;
+    navTotalDist = 0;
+    navFollow = false;
+    if (navFollowBtn) navFollowBtn.classList.remove('active');
+    if (navStartEl) navStartEl.textContent = '– Rechtsklick setzen';
+    if (navEndEl) navEndEl.textContent = '– Rechtsklick setzen';
+    if (navInfoEl) navInfoEl.innerHTML = '';
+    if (navProgressEl) navProgressEl.innerHTML = '';
+    sendWs({ type: 'clear-nav-target' });
+  }
+
+  let navRouteStart = null;
+
+  function setNavPoint(latlng, isStart) {
+    const g = latLngToGame(latlng.lat, latlng.lng);
+    const label = `X=${g.x.toFixed(0)} Y=${g.y.toFixed(0)}`;
+    if (isStart) {
+      if (navStartMarker) map.removeLayer(navStartMarker);
+      navRouteStart = latlng;
+      navStartMarker = L.marker(latlng, {
+        icon: L.divIcon({ className: 'nav-marker-start', iconSize: [14, 14], iconAnchor: [7, 7] }),
+      }).addTo(map);
+      if (navStartEl) navStartEl.textContent = label;
+    } else {
+      if (navEndMarker) map.removeLayer(navEndMarker);
+      navTarget = { x: g.x, y: g.y };
+      RoadNavigator.setTarget(g.x, g.y);
+      navEndMarker = L.marker(latlng, {
+        icon: L.divIcon({ className: 'nav-marker-end', iconSize: [14, 14], iconAnchor: [7, 7] }),
+        interactive: true,
+      }).addTo(map);
+      navEndMarker.on('click', clearNav);
+      if (navEndEl) navEndEl.textContent = label;
+      sendWs({ type: 'set-nav-target', x: g.x, y: g.y });
+    }
+  }
+
+  function calcRouteFromPoints() {
+    if (!navRouteStart || !navTarget) {
+      showToast('Start und Ziel per Rechtsklick setzen.');
+      return;
+    }
+    const sg = latLngToGame(navRouteStart.lat, navRouteStart.lng);
+    const route = RoadNavigator.findRoute(sg.x, sg.y);
+    drawNavRoute(route);
+  }
+
+  function updateNavProgress() {
+    if (!navRemaining || navRemaining.length < 2 || !navProgressEl) {
+      if (navProgressEl) navProgressEl.innerHTML = '';
+      return;
+    }
+    let remainingDist = 0;
+    for (let i = 1; i < navRemaining.length; i++) {
+      const dx = navRemaining[i].x - navRemaining[i - 1].x;
+      const dy = navRemaining[i].y - navRemaining[i - 1].y;
+      remainingDist += Math.sqrt(dx * dx + dy * dy);
+    }
+    const remKm = (remainingDist / 100000).toFixed(2);
+    const totalKm = (navTotalDist / 100000).toFixed(2);
+    const pct = navTotalDist > 0 ? Math.round((1 - remainingDist / navTotalDist) * 100) : 0;
+    navProgressEl.innerHTML = `Fortschritt: <span class="done">${pct}%</span> · Rest: <span class="dist">${remKm} km</span> / ${totalKm} km`;
+  }
+
+  function drawNavRoute(route) {
+    if (!route || route.length < 2) {
+      if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
+      if (navInfoEl) navInfoEl.innerHTML = '<span style="color:#e45858">Keine Route gefunden!</span>';
+      return;
+    }
+    const latlngs = route.map(r => gameToLatLng(r.x, r.y));
+    if (navLayer) {
+      navLayer.setLatLngs(latlngs);
+    } else {
+      navLayer = L.polyline(latlngs, {
+        color: '#00ffcc',
+        weight: 5,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+    }
+    navRemaining = route;
+    let totalDist = 0;
+    for (let i = 1; i < route.length; i++) {
+      const dx = route[i].x - route[i - 1].x;
+      const dy = route[i].y - route[i - 1].y;
+      totalDist += Math.sqrt(dx * dx + dy * dy);
+    }
+    navTotalDist = totalDist;
+    const km = (totalDist / 100000).toFixed(2);
+    if (navInfoEl) navInfoEl.innerHTML = `Route: ca. <span class="dist">${km} km</span>`;
+    if (navFollow) updateNavProgress();
+  }
 
   // Route layers
   let routeLayers = {};
@@ -926,6 +1137,39 @@
         if (followPlayer && currentPos) centerOnCurrentPos();
         break;
       }
+      case 'nav-target': {
+        const t = msgData;
+        if (t && typeof t.x === 'number' && typeof t.y === 'number') {
+          navTarget = { x: t.x, y: t.y };
+          RoadNavigator.setTarget(t.x, t.y);
+          if (navEndEl) navEndEl.textContent = `X=${t.x.toFixed(0)} Y=${t.y.toFixed(0)}`;
+          if (isBigMap) {
+            const ll = gameToLatLng(t.x, t.y);
+            if (navEndMarker) map.removeLayer(navEndMarker);
+            navEndMarker = L.marker(ll, {
+              icon: L.divIcon({ className: 'nav-marker-end', iconSize: [14, 14], iconAnchor: [7, 7] }),
+              interactive: true,
+            }).addTo(map);
+            navEndMarker.on('click', clearNav);
+          }
+          updateNavRoute();
+        }
+        break;
+      }
+      case 'nav-cleared': {
+        if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
+        if (navStartMarker) { map.removeLayer(navStartMarker); navStartMarker = null; }
+        if (navEndMarker) { map.removeLayer(navEndMarker); navEndMarker = null; }
+        navTarget = null;
+        navRouteStart = null;
+        navRemaining = null;
+        navTotalDist = 0;
+        if (navStartEl) navStartEl.textContent = '– Rechtsklick setzen';
+        if (navEndEl) navEndEl.textContent = '– Rechtsklick setzen';
+        if (navInfoEl) navInfoEl.innerHTML = '';
+        if (navProgressEl) navProgressEl.innerHTML = '';
+        break;
+      }
       case 'coord-update': {
         const newPos = msgData;
         const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
@@ -933,6 +1177,7 @@
         if (posChanged) {
           const ll = gameToLatLng(currentPos.x, currentPos.y);
           updateLiveMarker(ll);
+          updateNavRoute();
           if (connectedPoiIds.size > 0) {
             if (!connectionUpdatePending) {
               connectionUpdatePending = true;
@@ -1084,6 +1329,17 @@
       ws.close();
     };
   }
+
+  // Load road network for navigation
+  (async () => {
+    await RoadNavigator.init();
+    if (RoadNavigator.graph) {
+      showToast('🛣️ Straßennetz für Navigation geladen');
+      updateNavRoute();
+    } else {
+      showToast('⚠️ Straßennetz für Navigation konnte nicht geladen werden');
+    }
+  })();
 
   connectWs();
 

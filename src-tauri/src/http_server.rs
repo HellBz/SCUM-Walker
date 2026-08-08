@@ -12,6 +12,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use chrono::Utc;
+use tauri::Emitter;
 use crate::AppState;
 
 const LIVEMAP_HTML: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/livemap.html"));
@@ -23,6 +25,8 @@ const MARKERCLUSTER_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
 const MARKERCLUSTER_DEFAULT_CSS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/MarkerCluster.Default.css"));
 const MARKERCLUSTER_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/leaflet.markercluster.js"));
 const FAVICON_PNG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/favicon.png"));
+const NAVIGATION_JS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/navigation.js"));
+const ROADS_JSON: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/roads.json"));
 
 pub static HTTP_PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
 pub static WS_PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
@@ -114,6 +118,8 @@ async fn run_server(state: Arc<AppState>, tiles_dir: String) {
         .route("/lib/MarkerCluster.Default.css", get(markercluster_default_css_handler))
         .route("/lib/leaflet.markercluster.js", get(markercluster_js_handler))
         .route("/favicon.png", get(favicon_handler))
+        .route("/navigation.js", get(navigation_js_handler))
+        .route("/roads.json", get(roads_json_handler))
         .route("/api/bounds", get(get_bounds).post(post_bounds))
         .route("/api/poi_image/:id", get(poi_image_handler))
         .route("/tiles/:z/:x/:y", get(tile_handler))
@@ -161,6 +167,16 @@ async fn markercluster_css_handler() -> Response { text_response(MARKERCLUSTER_C
 async fn markercluster_default_css_handler() -> Response { text_response(MARKERCLUSTER_DEFAULT_CSS, "text/css; charset=utf-8") }
 async fn markercluster_js_handler() -> Response { text_response(MARKERCLUSTER_JS, "application/javascript; charset=utf-8") }
 async fn favicon_handler() -> Response { bytes_response(FAVICON_PNG, "image/png") }
+async fn navigation_js_handler() -> Response { text_response(NAVIGATION_JS, "application/javascript; charset=utf-8") }
+async fn roads_json_handler() -> Response {
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CACHE_CONTROL, "no-store, no-cache, must-revalidate")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .body(Body::from(ROADS_JSON))
+        .unwrap()
+}
 
 async fn get_bounds() -> Response {
     let bounds = WORLD_BOUNDS.read().unwrap().clone();
@@ -269,6 +285,13 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         )).await;
     }
 
+    let nav_target = state.nav_target.lock().unwrap().clone();
+    if let Some(t) = nav_target {
+        let _ = socket.send(Message::Text(
+            serde_json::json!(["nav-target", {"x": t.x, "y": t.y}]).to_string()
+        )).await;
+    }
+
     let ids = state.poi_connections.lock().unwrap().clone();
     let _ = socket.send(Message::Text(
         serde_json::json!(["poi-connections", ids]).to_string()
@@ -316,6 +339,32 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                                     *state.bigmap_modal_open.lock().unwrap() = open;
                                 }
                             }
+                        } else if text.contains("\"bigmap-center\"") {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let (Some(x), Some(y)) = (parsed.get("x").and_then(|v| v.as_f64()), parsed.get("y").and_then(|v| v.as_f64())) {
+                                    *state.bigmap_center.lock().unwrap() = Some(crate::CoordRecord { time: Utc::now(), x, y, z: 0.0, pitch: 0.0, yaw: 0.0, roll: 0.0 });
+                                }
+                            }
+                        } else if text.contains("\"set-nav-target\"") {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if let (Some(x), Some(y)) = (parsed.get("x").and_then(|v| v.as_f64()), parsed.get("y").and_then(|v| v.as_f64())) {
+                                    let target = crate::CoordRecord { time: Utc::now(), x, y, z: 0.0, pitch: 0.0, yaw: 0.0, roll: 0.0 };
+                                    *state.nav_target.lock().unwrap() = Some(target.clone());
+                                    crate::save_nav_target(&state.nav_target_path, &Some(target));
+                                    let payload = serde_json::json!({"x": x, "y": y});
+                                    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+                                        let _ = app_handle.emit("nav-target", payload.clone());
+                                    }
+                                    ws_broadcast(serde_json::json!(["nav-target", payload]).to_string());
+                                }
+                            }
+                        } else if text.contains("\"clear-nav-target\"") {
+                            *state.nav_target.lock().unwrap() = None;
+                            crate::save_nav_target(&state.nav_target_path, &None);
+                            if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+                                let _ = app_handle.emit("nav-cleared", ());
+                            }
+                            ws_broadcast(serde_json::json!(["nav-cleared"]).to_string());
                         } else if text.contains("\"remove-poi\"") {
                             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
                                 if let Some(id) = parsed.get("id").and_then(|v| v.as_str()) {

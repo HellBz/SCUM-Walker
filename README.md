@@ -7,6 +7,7 @@
 - **Live Tracking** – Automatically reads your position from SCUM via key simulation
 - **Interactive Map** – Leaflet-based offline map with zoom levels 0–6
 - **Route Recorder** – Record your paths, color-coded and exportable (JSON/CSV)
+- **Road Navigation** – Plan a driving route on the road network; right-click on the live map to set a destination
 - **POI Markers** – Place points of interest via right-click or from current position
 - **Overlay Mode** – Transparent always-on-top window for OBS/streaming
 - **Browser/OBS Integration** – Live-Map URL for browser sources in OBS

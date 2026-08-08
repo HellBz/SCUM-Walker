@@ -1053,3 +1053,90 @@ button:hover { background: #3a3a3a; }
   font-size: 11px;
   padding: 6px 8px;
 }
+
+.nav-marker-end {
+  background: #e45858;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+.nav-marker-start {
+  background: #44cc44;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+.nav-panel {
+  position: absolute;
+  top: 50px;
+  right: 10px;
+  width: 260px;
+  background: rgba(20, 20, 20, 0.95);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px 12px;
+  z-index: 1000;
+  font-size: 12px;
+  color: #ddd;
+  display: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.nav-panel.visible { display: block; }
+.nav-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #00ffcc;
+}
+.nav-mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.nav-mode-tabs button {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #333;
+  background: #1a1a1a;
+  color: #888;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.nav-mode-tabs button.active {
+  background: #00ffcc22;
+  border-color: #00ffcc;
+  color: #00ffcc;
+}
+.nav-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  align-items: center;
+}
+.nav-row label { color: #888; font-size: 11px; }
+.nav-row span { font-size: 11px; font-family: monospace; }
+.nav-row.hidden { display: none; }
+.nav-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 6px;
+}
+.nav-btns button {
+  padding: 5px 8px;
+  border: 1px solid #333;
+  background: #1a1a1a;
+  color: #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.nav-btns button.primary { background: #00ffcc22; border-color: #00ffcc; color: #00ffcc; }
+.nav-btns button.danger { background: #e4585822; border-color: #e45858; color: #e45858; }
+.nav-btns button.follow-btn { background: #ff880022; border-color: #ff8800; color: #ff8800; }
+.nav-btns button.follow-btn.active { background: #ff8800; color: #fff; }
+.nav-info { margin-top: 6px; font-size: 11px; color: #aaa; }
+.nav-info .dist { color: #00ffcc; font-weight: bold; }
+.nav-progress { margin-top: 4px; font-size: 11px; color: #aaa; }
+.nav-progress .done { color: #44cc44; font-weight: bold; }
+.nav-progress .dist { color: #ff8800; font-weight: bold; }

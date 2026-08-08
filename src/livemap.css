@@ -399,3 +399,55 @@ body.bigmap-mode #mapShell {
 }
 .bigmap-btn-cancel:hover { background: #444; }
 .bigmap-btn-save:hover { background: #00d9a3; }
+
+#nav-panel {
+  position: fixed;
+  z-index: 1100;
+  top: 60px;
+  left: 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(20,24,31,0.94);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  backdrop-filter: blur(12px);
+  display: none;
+  min-width: 240px;
+  color: #f4f6f8;
+  font-size: 13px;
+}
+#nav-panel.visible { display: block; }
+#nav-panel h3 { margin: 0 0 8px; font-size: 14px; color: #00ffcc; }
+#nav-panel .nav-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+#nav-panel .nav-row label { font-size: 11px; color: #9ca8b5; min-width: 42px; }
+#nav-panel .nav-row span { font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#nav-panel .nav-row.hidden { display: none; }
+#nav-panel .nav-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+#nav-panel button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  background: #242a33;
+  color: #f4f6f8;
+  cursor: pointer;
+  font-size: 12px;
+}
+#nav-panel button:hover { background: #303844; }
+#nav-panel button.primary { background: #217a5a; }
+#nav-panel button.primary:hover { background: #29936c; }
+#nav-panel button.danger { background: #713537; }
+#nav-panel button.danger:hover { background: #8c4144; }
+#nav-panel button.follow-btn { grid-column: 1/3; }
+#nav-panel button.follow-btn.active { background: #1a4a6a; border-color: #00aaff; color: #00aaff; }
+#nav-panel .nav-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; overflow: hidden; }
+#nav-panel .nav-mode-tabs button { border: none; border-radius: 0; background: #242a33; min-height: 30px; font-size: 12px; }
+#nav-panel .nav-mode-tabs button.active { background: #217a5a; color: #fff; }
+#nav-panel .nav-info, #nav-panel .nav-progress { font-size: 11px; color: #9ca8b5; margin-top: 6px; line-height: 1.4; }
+#nav-panel .nav-info .dist, #nav-panel .nav-progress .dist { color: #41b883; font-weight: 700; }
+#nav-panel .nav-progress .done { color: #00ffcc; }
+
+.nav-marker-start { background: #41b883; border: 2px solid #fff; border-radius: 50%; }
+.nav-marker-end { background: #e45858; border: 2px solid #fff; border-radius: 50%; }
+
+#controls button#toggleNav { font-weight: 700; }
