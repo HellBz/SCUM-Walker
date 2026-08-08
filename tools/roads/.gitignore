@@ -1,0 +1,12 @@
+# Generated road data (large, not committed)
+*.json
+
+# Map images / previews
+*.png
+*.webp
+*.jpg
+*.jpeg
+
+# Tile cache directories
+tiles_z*/
+tiles/
