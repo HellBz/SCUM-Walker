@@ -92,6 +92,46 @@ jobs:
               > src-tauri/installer-hooks.nsh
           fi
 
+      - name: Set release body
+        shell: bash
+        run: |
+          if echo "${GITHUB_REF_NAME}" | grep -qiE 'alpha|beta|rc'; then
+            printf '%s\n' \
+              '## ⚠️ Pre-Release Version' \
+              '' \
+              '**Dies ist eine Pre-Release Version ('"${GITHUB_REF_NAME}"') und keine finale Version.**' \
+              '' \
+              '- Diese Version kann noch Bugs enthalten und ist nicht für den produktiven Einsatz gedacht.' \
+              '- Es gibt **kein Auto-Update** für Pre-Releases – du musst diese Version manuell installieren.' \
+              '- Durch die Nutzung dieser Version nimmst du am aktiven Testing teil.' \
+              '- Bitte melde gefundene Fehler unter [Issues](https://github.com/HellBz/SCUM-Walker/issues).' \
+              '' \
+              '### Installation' \
+              '1. Lade den Installer für dein System herunter' \
+              '2. App starten' \
+              '3. In der App auf "⬇ Hi-Res Tiles" klicken für hochauflösende Karte' \
+              '' \
+              '---' \
+              '*SCUM Walker - Navigation Tool | https://github.com/HellBz/SCUM-Walker*' \
+              > release_body.md
+          else
+            printf '%s\n' \
+              '## SCUM Walker '"${GITHUB_REF_NAME}" \
+              '' \
+              '### Installation / Installation' \
+              '1. Download the installer for your system / Installer für dein System herunterladen' \
+              '2. Start the app / App starten' \
+              '3. Click "⬇ Hi-Res Tiles" in the app for high-resolution map / In der App auf "⬇ Hi-Res Tiles" klicken für hochauflösende Karte' \
+              '' \
+              '### Auto-Update / Automatisches Update' \
+              '- Windows: Click "Update verfügbar" in the sidebar to automatically download and install / Klicke auf "Update verfügbar" in der Sidebar zum automatischen Download und Installation' \
+              '- Linux/macOS: Click the link to open the release page / Klicke auf den Link um die Release-Seite zu öffnen' \
+              > release_body.md
+          fi
+          echo "RELEASE_BODY<<DELIMITER" >> $GITHUB_ENV
+          cat release_body.md >> $GITHUB_ENV
+          echo "DELIMITER" >> $GITHUB_ENV
+
       - name: Build Tauri app (Windows - with release upload)
         if: matrix.platform == 'windows-latest'
         id: tauri-build-win
@@ -103,17 +143,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'SCUM Walker ${{ github.ref_name }}'
-          releaseBody: |
-            ## SCUM Walker ${{ github.ref_name }}
-
-            ### Installation / Installation
-            1. Download the installer for your system / Installer für dein System herunterladen
-            2. Start the app / App starten
-            3. Click "⬇ Hi-Res Tiles" in the app for high-resolution map / In der App auf "⬇ Hi-Res Tiles" klicken für hochauflösende Karte
-
-            ### Auto-Update / Automatisches Update
-            - Windows: Click "Update verfügbar" in the sidebar to automatically download and install / Klicke auf "Update verfügbar" in der Sidebar zum automatischen Download und Installation
-            - Linux/macOS: Click the link to open the release page / Klicke auf den Link um die Release-Seite zu öffnen
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           includeUpdaterJson: ${{ !(contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc')) }}
