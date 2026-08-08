@@ -35,6 +35,7 @@
         "installerIcon": "icons/icon.ico",
         "headerImage": "icons/installer-header.bmp",
         "sidebarImage": "icons/installer-sidebar.bmp",
+        "installerHooks": "installer-hooks.nsh",
         "installMode": "currentUser",
         "languages": ["English", "German"],
         "displayLanguageSelector": true

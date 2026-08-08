@@ -56,6 +56,42 @@ jobs:
           sed -i.bak "s/^version = \".*\"/version = \"$MSI_VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
           sed -i.bak "s/\"version\": \".*\"/\"version\": \"$MSI_VERSION\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
 
+      - name: Set installer hooks for pre-release
+        shell: bash
+        run: |
+          if echo "${GITHUB_REF_NAME}" | grep -qiE 'alpha|beta|rc'; then
+            echo "Pre-release detected - adding pre-release installer hook"
+            printf '%s\n' \
+              '!macro NSIS_HOOK_PREINSTALL' \
+              '  MessageBox MB_OK "Achtung: Dies ist eine Pre-Release Version ('"${GITHUB_REF_NAME}"').$\r$\n$\r$\nDiese Version kann noch Bugs enthalten und ist nicht fuer den produktiven Einsatz gedacht.$\r$\n$\r$\nSCUM Walker - Navigation Tool$\r$\nhttps://github.com/HellBz/SCUM-Walker"' \
+              '!macroend' \
+              '' \
+              '!macro NSIS_HOOK_POSTINSTALL' \
+              '!macroend' \
+              '' \
+              '!macro NSIS_HOOK_PREUNINSTALL' \
+              '!macroend' \
+              '' \
+              '!macro NSIS_HOOK_POSTUNINSTALL' \
+              '!macroend' \
+              > src-tauri/installer-hooks.nsh
+          else
+            echo "Final release - using empty installer hooks"
+            printf '%s\n' \
+              '!macro NSIS_HOOK_PREINSTALL' \
+              '!macroend' \
+              '' \
+              '!macro NSIS_HOOK_POSTINSTALL' \
+              '!macroend' \
+              '' \
+              '!macro NSIS_HOOK_PREUNINSTALL' \
+              '!macroend' \
+              '' \
+              '!macro NSIS_HOOK_POSTUNINSTALL' \
+              '!macroend' \
+              > src-tauri/installer-hooks.nsh
+          fi
+
       - name: Build Tauri app (Windows - with release upload)
         if: matrix.platform == 'windows-latest'
         id: tauri-build-win
