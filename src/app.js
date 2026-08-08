@@ -1718,7 +1718,14 @@ if (window.__TAURI__.event) {
     const ll = gameToLatLng(currentCoord.x, currentCoord.y);
     updateLiveMarker(ll);
     updateConnectionLines();
-    updateNavRoute();
+    if (navPendingRoute && navMode === 'nav' && navTarget) {
+      navPendingRoute = false;
+      updateNavRoute();
+    } else if (navMode === 'nav' && navFollow && navTarget) {
+      updateNavRoute();
+    } else if (navFollow && navRemaining) {
+      trimNavRoute();
+    }
     if (followEnabled) {
       map.panTo(ll, { animate: true, duration: 0.8 });
     }
@@ -1823,6 +1830,7 @@ let navMode = 'nav';
 let navFollow = false;
 let navRemaining = null;
 let navTotalDist = 0;
+let navPendingRoute = false;
 
 const navPanel = document.getElementById('navPanel');
 const navStartEl = document.getElementById('navStart');
@@ -1910,7 +1918,6 @@ map.on('contextmenu', (e) => {
   } else {
     const g = latLngToGame(e.latlng.lat, e.latlng.lng);
     setNavTarget(g.x, g.y);
-    invoke('ws_broadcast_msg', { message: JSON.stringify({ type: 'set-nav-target', x: g.x, y: g.y }) });
   }
 });
 
@@ -1926,7 +1933,6 @@ function setNavPoint(latlng, isStart) {
     if (navStartEl) navStartEl.textContent = label;
   } else {
     setNavTarget(g.x, g.y);
-    invoke('ws_broadcast_msg', { message: JSON.stringify({ type: 'set-nav-target', x: g.x, y: g.y }) });
   }
 }
 
@@ -1988,16 +1994,76 @@ function drawNavRoute(route) {
   if (navFollow) updateNavProgress();
 }
 
+function trimNavRoute() {
+  if (!navRemaining || navRemaining.length < 2 || !currentCoord) return;
+  const snapThreshold = 50000; // 500m in game units (cm)
+  const snapSq = snapThreshold * snapThreshold;
+  let bestIdx = -1;
+  for (let i = 0; i < navRemaining.length; i++) {
+    const dx = navRemaining[i].x - currentCoord.x;
+    const dy = navRemaining[i].y - currentCoord.y;
+    if (dx * dx + dy * dy < snapSq) { bestIdx = i; break; }
+  }
+  if (bestIdx < 0) return;
+  if (bestIdx === navRemaining.length - 1) {
+    if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
+    navRemaining = null;
+    if (navProgressEl) navProgressEl.innerHTML = '<span class="done">Ziel erreicht!</span>';
+    navFollow = false;
+    if (navFollowBtn) navFollowBtn.classList.remove('active');
+    return;
+  }
+  navRemaining = navRemaining.slice(bestIdx);
+  const latlngs = navRemaining.map(r => gameToLatLng(r.x, r.y));
+  if (navLayer) {
+    navLayer.setLatLngs(latlngs);
+  } else {
+    navLayer = L.polyline(latlngs, {
+      color: '#00ffcc', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
+    }).addTo(map);
+  }
+  updateNavProgress();
+}
+
+// WebSocket for nav sync (like road editor / livemap)
+let navWs = null;
+function connectNavWs() {
+  const port = window.__WS_PORT__ || '4488';
+  try {
+    navWs = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  } catch (e) { return; }
+  navWs.onopen = () => { navWs.send(JSON.stringify({ type: 'login' })); };
+  navWs.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      const type = msg[0];
+      const data = msg[1];
+      if (type === 'nav-target') {
+        if (data && typeof data.x === 'number' && typeof data.y === 'number') {
+          setNavTarget(data.x, data.y, true);
+        }
+      } else if (type === 'nav-cleared') {
+        clearNavRoute(true);
+      }
+    } catch (e) {}
+  };
+  navWs.onclose = () => { setTimeout(connectNavWs, 5000); };
+}
+
 async function initNavigation() {
   try {
     const port = window.__WS_PORT__ || '4488';
     const url = `http://127.0.0.1:${port}/roads.json`;
     await RoadNavigator.init({ urls: [url] });
-    console.log('[nav] Straßennetz:', RoadNavigator.status);
     if (!RoadNavigator.graph) return;
+    connectNavWs();
     const savedTarget = await invoke('get_nav_target');
     if (savedTarget && typeof savedTarget.x === 'number' && typeof savedTarget.y === 'number') {
-      setNavTarget(savedTarget.x, savedTarget.y);
+      setNavTarget(savedTarget.x, savedTarget.y, true);
+      if (navPendingRoute && currentCoord) {
+        navPendingRoute = false;
+        updateNavRoute();
+      }
     }
   } catch (err) {
     console.warn('[nav] Fehler beim Laden:', err);
@@ -2013,7 +2079,7 @@ function updateNavRoute() {
   drawNavRoute(route);
 }
 
-function setNavTarget(x, y) {
+function setNavTarget(x, y, fromRemote) {
   navTarget = { x, y };
   RoadNavigator.setTarget(x, y);
   if (navEndMarker) map.removeLayer(navEndMarker);
@@ -2022,12 +2088,19 @@ function setNavTarget(x, y) {
     icon: L.divIcon({ className: 'nav-marker-end', iconSize: [14, 14], iconAnchor: [7, 7] }),
     interactive: true,
   }).addTo(map);
-  navEndMarker.on('click', clearNavRoute);
+  navEndMarker.on('click', () => clearNavRoute());
   if (navEndEl) navEndEl.textContent = `X=${x.toFixed(0)} Y=${y.toFixed(0)}`;
-  if (navMode === 'nav') updateNavRoute();
+  if (!fromRemote) invoke('set_nav_target', { x, y });
+  if (navMode === 'nav') {
+    if (currentCoord) {
+      updateNavRoute();
+    } else {
+      navPendingRoute = true;
+    }
+  }
 }
 
-function clearNavRoute() {
+function clearNavRoute(fromRemote) {
   if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
   if (navStartMarker) { map.removeLayer(navStartMarker); navStartMarker = null; }
   if (navEndMarker) { map.removeLayer(navEndMarker); navEndMarker = null; }
@@ -2041,7 +2114,7 @@ function clearNavRoute() {
   if (navEndEl) navEndEl.textContent = '– Rechtsklick setzen';
   if (navInfoEl) navInfoEl.innerHTML = '';
   if (navProgressEl) navProgressEl.innerHTML = '';
-  invoke('ws_broadcast_msg', { message: JSON.stringify({ type: 'clear-nav-target' }) });
+  if (!fromRemote) invoke('clear_nav_target');
 }
 
 initNavigation();
@@ -2049,10 +2122,10 @@ initNavigation();
 window.__TAURI__.event.listen('nav-target', (event) => {
   const t = event.payload;
   if (t && typeof t.x === 'number' && typeof t.y === 'number') {
-    setNavTarget(t.x, t.y);
+    setNavTarget(t.x, t.y, true);
   }
 });
 
 window.__TAURI__.event.listen('nav-cleared', () => {
-  clearNavRoute();
+  clearNavRoute(true);
 });

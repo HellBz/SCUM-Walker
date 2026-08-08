@@ -501,6 +501,37 @@
     drawNavRoute(route);
   }
 
+  function trimNavRoute() {
+    if (!navRemaining || navRemaining.length < 2 || !currentPos) return;
+    const snapThreshold = 50000; // 500m in game units (cm)
+    const snapSq = snapThreshold * snapThreshold;
+    let bestIdx = -1;
+    for (let i = 0; i < navRemaining.length; i++) {
+      const dx = navRemaining[i].x - currentPos.x;
+      const dy = navRemaining[i].y - currentPos.y;
+      if (dx * dx + dy * dy < snapSq) { bestIdx = i; break; }
+    }
+    if (bestIdx < 0) return;
+    if (bestIdx === navRemaining.length - 1) {
+      if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
+      navRemaining = null;
+      if (navProgressEl) navProgressEl.innerHTML = '<span class="done">Ziel erreicht!</span>';
+      navFollow = false;
+      if (navFollowBtn) navFollowBtn.classList.remove('active');
+      return;
+    }
+    navRemaining = navRemaining.slice(bestIdx);
+    const latlngs = navRemaining.map(r => gameToLatLng(r.x, r.y));
+    if (navLayer) {
+      navLayer.setLatLngs(latlngs);
+    } else {
+      navLayer = L.polyline(latlngs, {
+        color: '#00ffcc', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
+      }).addTo(map);
+    }
+    updateNavProgress();
+  }
+
   function updateNavProgress() {
     if (!navRemaining || navRemaining.length < 2 || !navProgressEl) {
       if (navProgressEl) navProgressEl.innerHTML = '';
@@ -1177,7 +1208,11 @@
         if (posChanged) {
           const ll = gameToLatLng(currentPos.x, currentPos.y);
           updateLiveMarker(ll);
-          updateNavRoute();
+          if (navMode === 'nav' && navFollow && navTarget) {
+            updateNavRoute();
+          } else if (navFollow && navRemaining) {
+            trimNavRoute();
+          }
           if (connectedPoiIds.size > 0) {
             if (!connectionUpdatePending) {
               connectionUpdatePending = true;

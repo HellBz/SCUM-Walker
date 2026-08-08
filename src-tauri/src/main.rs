@@ -1690,6 +1690,24 @@ fn get_nav_target(state: State<Arc<AppState>>) -> Option<serde_json::Value> {
     state.nav_target.lock().unwrap().clone().map(|t| serde_json::json!({"x": t.x, "y": t.y}))
 }
 
+#[tauri::command]
+fn set_nav_target(x: f64, y: f64, state: State<Arc<AppState>>, app_handle: tauri::AppHandle) {
+    let target = CoordRecord { time: chrono::Utc::now(), x, y, z: 0.0, pitch: 0.0, yaw: 0.0, roll: 0.0 };
+    *state.nav_target.lock().unwrap() = Some(target.clone());
+    save_nav_target(&state.nav_target_path, &Some(target));
+    let payload = serde_json::json!({"x": x, "y": y});
+    let _ = app_handle.emit("nav-target", payload.clone());
+    ws_broadcast(serde_json::json!(["nav-target", payload]).to_string());
+}
+
+#[tauri::command]
+fn clear_nav_target(state: State<Arc<AppState>>, app_handle: tauri::AppHandle) {
+    *state.nav_target.lock().unwrap() = None;
+    save_nav_target(&state.nav_target_path, &None);
+    let _ = app_handle.emit("nav-cleared", ());
+    ws_broadcast(serde_json::json!(["nav-cleared"]).to_string());
+}
+
 pub(crate) fn apply_add_poi(state: &Arc<AppState>, mut poi: Poi) -> AppData {
     if poi.category.is_empty() {
         poi.category = compute_sector(poi.x, poi.y);
@@ -2160,6 +2178,8 @@ fn main() {
             get_poi_connections,
             get_player_position,
             get_nav_target,
+            set_nav_target,
+            clear_nav_target,
             add_poi,
             update_poi,
             remove_poi,

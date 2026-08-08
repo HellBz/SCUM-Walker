@@ -10,7 +10,7 @@
   };
 
   const DEFAULT_IMAGE_SIZE = { width: 14481, height: 14481 };
-  const SNAP_PX = 15; // merge nodes within 15 image pixels
+  const SNAP_PX = 30; // merge nodes within 30 image pixels (same as road editor)
 
   // ------- Binary min-heap -------
   class MinHeap {
@@ -148,16 +148,17 @@
       // Collect all segments first (no edges yet)
       const allSegments = [];
 
+      const ROAD_WEIGHTS = { primary: 1.0, main: 1.0, secondary: 1.6, tertiary: 1.6 };
       roads.forEach(road => {
         const pts = road.points || [];
         if (pts.length < 2) return;
-        const yellowRatio = typeof road.yellow_ratio === 'number' ? road.yellow_ratio : 0;
-        const costMul = 1.0 - yellowRatio * 0.1;
+        if (road.type === 'rail') return;
+        const weight = ROAD_WEIGHTS[road.type] || 1.6;
         let prev = this.getOrAddNode(pts[0][0], pts[0][1]);
         for (let i = 1; i < pts.length; i++) {
           const cur = this.getOrAddNode(pts[i][0], pts[i][1]);
           if (cur !== prev) {
-            allSegments.push({ a: prev, b: cur, costMul });
+            allSegments.push({ a: prev, b: cur, costMul: weight });
           }
           prev = cur;
         }
