@@ -49,9 +49,12 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "Setting version to $VERSION"
-          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
-          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
+          # For MSI compatibility, strip non-numeric pre-release suffixes
+          # e.g. 0.7.9-navigation-alpha -> 0.7.9
+          MSI_VERSION=$(echo "$VERSION" | sed 's/-.*//')
+          echo "Setting version to $MSI_VERSION"
+          sed -i.bak "s/^version = \".*\"/version = \"$MSI_VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
+          sed -i.bak "s/\"version\": \".*\"/\"version\": \"$MSI_VERSION\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
 
       - name: Build Tauri app (Windows - with release upload)
         if: matrix.platform == 'windows-latest'
@@ -76,8 +79,8 @@ jobs:
             - Windows: Click "Update verfügbar" in the sidebar to automatically download and install / Klicke auf "Update verfügbar" in der Sidebar zum automatischen Download und Installation
             - Linux/macOS: Click the link to open the release page / Klicke auf den Link um die Release-Seite zu öffnen
           releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          includeUpdaterJson: ${{ !(contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc')) }}
           args: ${{ matrix.args }}
 
       - name: Build Tauri app (Linux/macOS - no release upload)
