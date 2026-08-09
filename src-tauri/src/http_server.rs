@@ -292,6 +292,11 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
         )).await;
     }
 
+    let nav_route_color = state.nav_route_color.lock().unwrap().clone();
+    let _ = socket.send(Message::Text(
+        serde_json::json!(["nav-route-color", nav_route_color]).to_string()
+    )).await;
+
     let ids = state.poi_connections.lock().unwrap().clone();
     let _ = socket.send(Message::Text(
         serde_json::json!(["poi-connections", ids]).to_string()

@@ -173,6 +173,8 @@ pub(crate) struct AppState {
     bigmap_center: Mutex<Option<CoordRecord>>,
     nav_target: Mutex<Option<CoordRecord>>,
     pub(crate) nav_target_path: PathBuf,
+    nav_route_color: Mutex<String>,
+    pub(crate) nav_route_color_path: PathBuf,
 }
 
 impl AppState {
@@ -240,6 +242,25 @@ pub(crate) fn load_nav_target(path: &PathBuf) -> Option<CoordRecord> {
     } else {
         None
     }
+}
+
+pub(crate) fn save_nav_route_color(path: &PathBuf, color: &str) {
+    if let Ok(json) = serde_json::to_string_pretty(&serde_json::json!({ "color": color })) {
+        let _ = fs::write(path, json);
+    }
+}
+
+pub(crate) fn load_nav_route_color(path: &PathBuf) -> String {
+    if let Ok(json) = fs::read_to_string(path) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+            if let Some(color) = value.get("color").and_then(|v| v.as_str()) {
+                if color.starts_with('#') && color.len() == 7 {
+                    return color.to_string();
+                }
+            }
+        }
+    }
+    "#00ffcc".to_string()
 }
 
 #[cfg(windows)]
@@ -1708,6 +1729,31 @@ fn clear_nav_target(state: State<Arc<AppState>>, app_handle: tauri::AppHandle) {
     ws_broadcast(serde_json::json!(["nav-cleared"]).to_string());
 }
 
+pub(crate) fn apply_nav_route_color(state: &Arc<AppState>, color: &str) {
+    let color = color.to_string();
+    *state.nav_route_color.lock().unwrap() = color.clone();
+    save_nav_route_color(&state.nav_route_color_path, &color);
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("nav-route-color", &color);
+    }
+    ws_broadcast(serde_json::json!(["nav-route-color", color]).to_string());
+}
+
+#[tauri::command]
+fn get_nav_route_color(state: State<Arc<AppState>>) -> String {
+    state.nav_route_color.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_nav_route_color(state: State<Arc<AppState>>, color: String) -> Result<(), String> {
+    let color = color.trim().to_lowercase();
+    if !color.starts_with('#') || color.len() != 7 || !color.chars().skip(1).all(|c| c.is_ascii_hexdigit()) {
+        return Err("Ungültige Farbe. Bitte #RRGGBB verwenden.".to_string());
+    }
+    apply_nav_route_color(&state, &color);
+    Ok(())
+}
+
 pub(crate) fn apply_add_poi(state: &Arc<AppState>, mut poi: Poi) -> AppData {
     if poi.category.is_empty() {
         poi.category = compute_sector(poi.x, poi.y);
@@ -2092,8 +2138,13 @@ fn main() {
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .join("nav_target.json");
 
+            let nav_route_color_path = app.path().app_data_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("nav_route_color.json");
+
             let data = load_data(&data_path);
             let saved_nav_target = load_nav_target(&nav_target_path);
+            let nav_route_color = load_nav_route_color(&nav_route_color_path);
             let state = Arc::new(AppState {
                 data: Mutex::new(data.clone()),
                 data_path,
@@ -2107,6 +2158,8 @@ fn main() {
                 bigmap_center: Mutex::new(None),
                 nav_target: Mutex::new(saved_nav_target),
                 nav_target_path,
+                nav_route_color: Mutex::new(nav_route_color),
+                nav_route_color_path,
             });
             *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
@@ -2180,6 +2233,8 @@ fn main() {
             get_nav_target,
             set_nav_target,
             clear_nav_target,
+            get_nav_route_color,
+            set_nav_route_color,
             add_poi,
             update_poi,
             remove_poi,

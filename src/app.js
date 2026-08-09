@@ -1880,22 +1880,49 @@ const navStartRow = document.getElementById('navStartRow');
 const navColorPicker = document.getElementById('navColorPicker');
 const navColorReset = document.getElementById('navColorReset');
 const DEFAULT_NAV_COLOR = '#00ffcc';
-let navRouteColor = safeGetStorage('nav.routeColor', DEFAULT_NAV_COLOR);
+let navRouteColor = DEFAULT_NAV_COLOR;
+
+function applyNavRouteColor(color) {
+  navRouteColor = color.toLowerCase();
+  if (navColorPicker) navColorPicker.value = navRouteColor;
+  if (navLayer) navLayer.setStyle({ color: navRouteColor });
+}
+
+(async () => {
+  try {
+    const color = await window.__TAURI__.core.invoke('get_nav_route_color');
+    if (color) applyNavRouteColor(color);
+  } catch (e) {
+    console.error('[nav] failed to load route color', e);
+  }
+})();
 
 if (navColorPicker) {
-  navColorPicker.value = navRouteColor;
-  navColorPicker.addEventListener('input', (e) => {
-    navRouteColor = e.target.value.toLowerCase();
-    safeSetStorage('nav.routeColor', navRouteColor);
-    if (navLayer) navLayer.setStyle({ color: navRouteColor });
+  navColorPicker.addEventListener('input', async (e) => {
+    const color = e.target.value;
+    applyNavRouteColor(color);
+    try {
+      await window.__TAURI__.core.invoke('set_nav_route_color', { color: color.toLowerCase() });
+    } catch (err) {
+      console.error('[nav] set route color failed', err);
+    }
   });
 }
 if (navColorReset) {
-  navColorReset.addEventListener('click', () => {
-    navRouteColor = DEFAULT_NAV_COLOR;
-    safeSetStorage('nav.routeColor', navRouteColor);
-    if (navColorPicker) navColorPicker.value = DEFAULT_NAV_COLOR;
-    if (navLayer) navLayer.setStyle({ color: navRouteColor });
+  navColorReset.addEventListener('click', async () => {
+    applyNavRouteColor(DEFAULT_NAV_COLOR);
+    try {
+      await window.__TAURI__.core.invoke('set_nav_route_color', { color: DEFAULT_NAV_COLOR });
+    } catch (err) {
+      console.error('[nav] reset route color failed', err);
+    }
+  });
+}
+
+if (window.__TAURI__.event) {
+  window.__TAURI__.event.listen('nav-route-color', (e) => {
+    const color = (e.payload || DEFAULT_NAV_COLOR).toString();
+    applyNavRouteColor(color);
   });
 }
 

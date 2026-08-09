@@ -381,9 +381,9 @@
   let navEndMarker = null;
   let navVisible = false;
   let navMode = 'nav';
-  let navFollow = false;
   let navRemaining = null;
   let navTotalDist = 0;
+  let navRouteColor = '#00ffcc';
 
   const toggleNavBtn = document.getElementById('toggleNav');
   const navPanel = document.getElementById('nav-panel');
@@ -393,7 +393,6 @@
   const navProgressEl = document.getElementById('navProgress');
   const navCalcBtn = document.getElementById('navCalcBtn');
   const navClearBtn = document.getElementById('navClearBtn');
-  const navFollowBtn = document.getElementById('navFollowBtn');
   const navModeRoute = document.getElementById('navModeRoute');
   const navModeNav = document.getElementById('navModeNav');
   const navStartRow = document.getElementById('navStartRow');
@@ -440,14 +439,6 @@
   if (navClearBtn) {
     navClearBtn.addEventListener('click', clearNav);
   }
-  if (navFollowBtn) {
-    navFollowBtn.addEventListener('click', () => {
-      navFollow = !navFollow;
-      navFollowBtn.classList.toggle('active', navFollow);
-      if (navFollow && navRemaining) updateNavProgress();
-      if (!navFollow && navProgressEl) navProgressEl.innerHTML = '';
-    });
-  }
 
   function clearNav() {
     if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
@@ -456,8 +447,6 @@
     navTarget = null;
     navRemaining = null;
     navTotalDist = 0;
-    navFollow = false;
-    if (navFollowBtn) navFollowBtn.classList.remove('active');
     if (navStartEl) navStartEl.textContent = '– Rechtsklick setzen';
     if (navEndEl) navEndEl.textContent = '– Rechtsklick setzen';
     if (navInfoEl) navInfoEl.innerHTML = '';
@@ -516,8 +505,6 @@
       if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
       navRemaining = null;
       if (navProgressEl) navProgressEl.innerHTML = '<span class="done">Ziel erreicht!</span>';
-      navFollow = false;
-      if (navFollowBtn) navFollowBtn.classList.remove('active');
       return;
     }
     navRemaining = navRemaining.slice(bestIdx);
@@ -526,10 +513,24 @@
       navLayer.setLatLngs(latlngs);
     } else {
       navLayer = L.polyline(latlngs, {
-        color: '#00ffcc', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
+        color: navRouteColor, weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
       }).addTo(map);
     }
     updateNavProgress();
+  }
+
+  function needsReroute() {
+    if (!navRemaining || navRemaining.length < 2 || !currentPos) return false;
+    const maxDist = 50000; // 500m deviation threshold
+    const maxSq = maxDist * maxDist;
+    let minSq = Infinity;
+    for (let i = 0; i < navRemaining.length; i++) {
+      const dx = navRemaining[i].x - currentPos.x;
+      const dy = navRemaining[i].y - currentPos.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minSq) minSq = distSq;
+    }
+    return minSq > maxSq;
   }
 
   function updateNavProgress() {
@@ -558,9 +559,10 @@
     const latlngs = route.map(r => gameToLatLng(r.x, r.y));
     if (navLayer) {
       navLayer.setLatLngs(latlngs);
+      navLayer.setStyle({ color: navRouteColor });
     } else {
       navLayer = L.polyline(latlngs, {
-        color: '#00ffcc',
+        color: navRouteColor,
         weight: 5,
         opacity: 0.9,
         lineCap: 'round',
@@ -577,7 +579,7 @@
     navTotalDist = totalDist;
     const km = (totalDist / 100000).toFixed(2);
     if (navInfoEl) navInfoEl.innerHTML = `Route: ca. <span class="dist">${km} km</span>`;
-    if (navFollow) updateNavProgress();
+    updateNavProgress();
   }
 
   // Route layers
@@ -906,21 +908,47 @@
         let hoverBound = false;
         marker.on('mouseover', () => {
           if (!hoverBound) {
-            marker.bindPopup('<img src="' + imgUrl + '" style="max-width:200px;max-height:150px;border-radius:4px">', { maxWidth: 250, closeButton: false, autoPan: false });
+            marker.bindPopup('<div id="poi-popup-' + poi.id + '" style="width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:#1a2332;border-radius:4px"><span style="color:#888;font-size:12px">Loading...</span></div>', { maxWidth: 250, closeButton: false, autoPan: false });
             hoverBound = true;
           }
           marker.openPopup();
+          const img = new Image();
+          img.onload = () => {
+            const popup = document.getElementById('poi-popup-' + poi.id);
+            if (!popup) return;
+            const maxW = 200, maxH = 150;
+            const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+            const w = Math.round(img.width * scale);
+            const h = Math.round(img.height * scale);
+            popup.style.width = w + 'px';
+            popup.style.height = h + 'px';
+            popup.innerHTML = '<img src="' + imgUrl + '" style="width:' + w + 'px;height:' + h + 'px;border-radius:4px;display:block">';
+            marker.updatePopup();
+          };
+          img.src = imgUrl;
         });
         marker.on('click', () => {
           marker.closePopup();
           const overlay = document.createElement('div');
           overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
-          const img = document.createElement('img');
-          img.src = imgUrl;
-          img.style.cssText = 'max-width:90vw;max-height:85vh;border-radius:8px;border:1px solid #00ffcc55';
-          overlay.appendChild(img);
+          const loading = document.createElement('div');
+          loading.textContent = 'Loading...';
+          loading.style.cssText = 'color:#888;font-size:14px';
+          overlay.appendChild(loading);
           overlay.onclick = () => document.body.removeChild(overlay);
           document.body.appendChild(overlay);
+          const img = new Image();
+          img.onload = () => {
+            overlay.removeChild(loading);
+            const maxW = window.innerWidth * 0.9;
+            const maxH = window.innerHeight * 0.85;
+            const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+            const w = Math.round(img.width * scale);
+            const h = Math.round(img.height * scale);
+            img.style.cssText = 'width:' + w + 'px;height:' + h + 'px;border-radius:8px;border:1px solid #00ffcc55;display:block';
+            overlay.appendChild(img);
+          };
+          img.src = imgUrl;
         });
       }
 
@@ -1201,6 +1229,12 @@
         if (navProgressEl) navProgressEl.innerHTML = '';
         break;
       }
+      case 'nav-route-color': {
+        const color = msgData || '#00ffcc';
+        navRouteColor = color;
+        if (navLayer) navLayer.setStyle({ color });
+        break;
+      }
       case 'coord-update': {
         const newPos = msgData;
         const posChanged = JSON.stringify(newPos) !== JSON.stringify(currentPos);
@@ -1208,10 +1242,10 @@
         if (posChanged) {
           const ll = gameToLatLng(currentPos.x, currentPos.y);
           updateLiveMarker(ll);
-          if (navMode === 'nav' && navFollow && navTarget) {
+          console.log('[nav-livemap] coord-update:', currentPos.x.toFixed(0), currentPos.y.toFixed(0), 'target:', navTarget, 'remaining:', !!navRemaining);
+          if (navTarget) {
+            console.log('[nav-livemap] recalculating route from current pos');
             updateNavRoute();
-          } else if (navFollow && navRemaining) {
-            trimNavRoute();
           }
           if (connectedPoiIds.size > 0) {
             if (!connectionUpdatePending) {
@@ -1223,7 +1257,23 @@
             }
           }
         }
-        statusEl.textContent = `X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`;
+        let statusText = `X=${currentPos.x.toFixed(0)} Y=${currentPos.y.toFixed(0)}`;
+        if (navTarget && currentPos && navRemaining && navRemaining.length >= 2) {
+          let remaining = 0;
+          for (let i = 1; i < navRemaining.length; i++) {
+            const dx = navRemaining[i].x - navRemaining[i - 1].x;
+            const dy = navRemaining[i].y - navRemaining[i - 1].y;
+            remaining += Math.sqrt(dx * dx + dy * dy);
+          }
+          const km = (remaining / 100000).toFixed(2);
+          statusText += ` · Ziel: ${km} km`;
+        } else if (navTarget && currentPos) {
+          const dx = navTarget.x - currentPos.x;
+          const dy = navTarget.y - currentPos.y;
+          const km = (Math.sqrt(dx * dx + dy * dy) / 100000).toFixed(2);
+          statusText += ` · Ziel: ${km} km (Luftlinie)`;
+        }
+        statusEl.textContent = statusText;
         if (followPlayer && currentPos) centerOnCurrentPos();
         break;
       }
