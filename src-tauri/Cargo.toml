@@ -20,6 +20,7 @@ base64 = "0.22"
 axum = { version = "0.7", features = ["ws"] }
 rfd = "0.14"
 reqwest = { version = "0.12", features = ["blocking"] }
+semver = "1"
 zip = "2.1"
 tauri-plugin-single-instance = "2"
 

@@ -1343,14 +1343,18 @@ fn version_greater(a: &str, b: &str) -> bool {
     }
 }
 
+fn release_version() -> &'static str {
+    option_env!("RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
 #[tauri::command]
 fn get_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    release_version().to_string()
 }
 
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let current = env!("CARGO_PKG_VERSION").to_string();
+    let current = release_version().to_string();
     let updater = app.updater()
         .map_err(|e| format!("Updater nicht verfügbar: {}", e))?;
     let update = updater.check().await
@@ -2128,7 +2132,19 @@ fn main() {
                 let _ = w.set_focus();
             });
         }))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new()
+            .default_version_comparator({
+                let current_version = release_version().trim_start_matches('v').to_string();
+                move |_current: semver::Version, release: tauri_plugin_updater::RemoteRelease| {
+                    let release_version = release.version.to_string();
+                    let release_version = release_version.trim_start_matches('v');
+                    match (semver::Version::parse(&current_version), semver::Version::parse(release_version)) {
+                        (Ok(c), Ok(r)) => r > c,
+                        _ => release_version != current_version,
+                    }
+                }
+            })
+            .build())
         .setup(move |app| {
             let data_path = app.path().app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))

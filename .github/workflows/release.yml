@@ -55,6 +55,7 @@ jobs:
           echo "Setting version to $MSI_VERSION"
           sed -i.bak "s/^version = \".*\"/version = \"$MSI_VERSION\"/" src-tauri/Cargo.toml && rm -f src-tauri/Cargo.toml.bak
           sed -i.bak "s/\"version\": \".*\"/\"version\": \"$MSI_VERSION\"/" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
+          echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Set installer hooks for pre-release
         shell: bash
