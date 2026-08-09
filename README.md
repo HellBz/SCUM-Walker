@@ -4,7 +4,7 @@
 
 Live position tracking, route recorder & road navigation, POIs for gear/crates/cars, F9 in-game screenshots with instant POI creation, and a built-in OBS/browser overlay – all without leaving the game.
 
-![SCUM Walker main app screenshot](screenshots/app.png)
+[![SCUM Walker main app screenshot](screenshots/app.png)](screenshots/app.png)
 
 ## Features
 
@@ -72,24 +72,24 @@ Click any image to see it full-size.
   <tr>
     <td align="center">
       <b>In-game POI photo</b><br>
-      <img src="screenshots/ingame-photo.png" width="420" alt="In-game POI photo"><br>
+      <a href="screenshots/ingame-photo.png"><img src="screenshots/ingame-photo.png" width="420" alt="In-game POI photo"></a><br>
       <sub>Press F9 in-game to take a screenshot and automatically create a POI marker.</sub>
     </td>
     <td align="center">
       <b>In-game map</b><br>
-      <img src="screenshots/ingame-map.png" width="420" alt="In-game map"><br>
+      <a href="screenshots/ingame-map.png"><img src="screenshots/ingame-map.png" width="420" alt="In-game map"></a><br>
       <sub>The live map with player position, recorded routes and navigation overlay while in-game.</sub>
     </td>
   </tr>
   <tr>
     <td align="center">
       <b>Browser integration</b><br>
-      <img src="screenshots/browser.png" width="420" alt="Browser livemap"><br>
+      <a href="screenshots/browser.png"><img src="screenshots/browser.png" width="420" alt="Browser livemap"></a><br>
       <sub>Open the generated Live-Map URL in any browser or use it on a second monitor.</sub>
     </td>
     <td align="center">
       <b>OBS integration</b><br>
-      <img src="screenshots/obs.png" width="420" alt="OBS browser source"><br>
+      <a href="screenshots/obs.png"><img src="screenshots/obs.png" width="420" alt="OBS browser source"></a><br>
       <sub>Add the Live-Map URL as a Browser Source in OBS to show the map overlay on stream.</sub>
     </td>
   </tr>
