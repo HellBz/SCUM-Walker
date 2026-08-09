@@ -1877,6 +1877,27 @@ const navFollowBtn = document.getElementById('navFollowBtn');
 const navModeRoute = document.getElementById('navModeRoute');
 const navModeNav = document.getElementById('navModeNav');
 const navStartRow = document.getElementById('navStartRow');
+const navColorPicker = document.getElementById('navColorPicker');
+const navColorReset = document.getElementById('navColorReset');
+const DEFAULT_NAV_COLOR = '#00ffcc';
+let navRouteColor = safeGetStorage('nav.routeColor', DEFAULT_NAV_COLOR);
+
+if (navColorPicker) {
+  navColorPicker.value = navRouteColor;
+  navColorPicker.addEventListener('input', (e) => {
+    navRouteColor = e.target.value.toLowerCase();
+    safeSetStorage('nav.routeColor', navRouteColor);
+    if (navLayer) navLayer.setStyle({ color: navRouteColor });
+  });
+}
+if (navColorReset) {
+  navColorReset.addEventListener('click', () => {
+    navRouteColor = DEFAULT_NAV_COLOR;
+    safeSetStorage('nav.routeColor', navRouteColor);
+    if (navColorPicker) navColorPicker.value = DEFAULT_NAV_COLOR;
+    if (navLayer) navLayer.setStyle({ color: navRouteColor });
+  });
+}
 
 document.getElementById('mapNavBtn').addEventListener('click', () => {
   navMode = 'nav';
@@ -1998,9 +2019,10 @@ function drawNavRoute(route) {
   const latlngs = route.map(r => gameToLatLng(r.x, r.y));
   if (navLayer) {
     navLayer.setLatLngs(latlngs);
+    navLayer.setStyle({ color: navRouteColor });
   } else {
     navLayer = L.polyline(latlngs, {
-      color: '#00ffcc',
+      color: navRouteColor,
       weight: 5,
       opacity: 0.9,
       lineCap: 'round',
@@ -2043,7 +2065,7 @@ function trimNavRoute() {
     navLayer.setLatLngs(latlngs);
   } else {
     navLayer = L.polyline(latlngs, {
-      color: '#00ffcc', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
+      color: navRouteColor, weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round',
     }).addTo(map);
   }
   updateNavProgress();
