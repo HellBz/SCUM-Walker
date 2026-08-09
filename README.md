@@ -4,6 +4,14 @@
 
 Live position tracking, route recorder & road navigation, POIs for gear/crates/cars, F9 in-game screenshots with instant POI creation, and a built-in OBS/browser overlay – all without leaving the game.
 
+<p align="center">
+  <a href="https://github.com/HellBz/SCUM-Walker/releases/latest"><img src="https://img.shields.io/github/v/release/HellBz/SCUM-Walker?label=latest%20release" alt="Latest release"></a>
+  <a href="https://github.com/HellBz/SCUM-Walker/releases"><img src="https://img.shields.io/github/downloads/HellBz/SCUM-Walker/total?label=downloads" alt="Downloads"></a>
+  <a href="./src-tauri/LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
+  <a href="https://www.twitch.tv/hellbz"><img src="https://img.shields.io/twitch/status/hellbz?style=flat&logo=twitch" alt="Twitch"></a>
+  <a href="https://discord.gg/tuzpmeZ"><img src="https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
 [![SCUM Walker main app screenshot](screenshots/app.png)](screenshots/app.png)
 
 ## Features
@@ -18,6 +26,14 @@ Live position tracking, route recorder & road navigation, POIs for gear/crates/c
 - **Browser/OBS Integration** – Live-Map URL for browser sources in OBS
 - **Hi-Res Tiles** – Optional high-resolution map tiles (zoom 4–6) via in-app download
 - **Auto-Updater** – Notifies about new releases and installs updates from GitHub
+
+## Community & Support
+
+- [All my socials](https://linktr.ee/HellBz) – Twitch, X/Twitter, Instagram, YouTube and more
+- [Twitch](https://www.twitch.tv/hellbz) – watch live SCUM streams
+- [Our Discord](https://discord.gg/tuzpmeZ) – chat, feedback and support
+- [Nuclear Island SCUM server](https://de.top-games.net/scum/nuclear-island-geren-pvppve) – the server we play on
+- [Nuclear Island Discord](https://discord.com/invite/nuclearisland)
 
 ## Installation
 
