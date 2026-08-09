@@ -20,6 +20,8 @@ const poiCategoryInput = document.getElementById('poiCategoryInput');
 const poiCategoryFilter = document.getElementById('poiCategoryFilter');
 const versionBadge = document.getElementById('versionBadge');
 const updateLink = document.getElementById('updateLink');
+const toggleCoordsBtn = document.getElementById('toggleCoordsBtn');
+let showCoords = true;
 
 const ROUTE_COLORS = ['#00ffcc', '#ff8800', '#4488ff', '#ff44d3', '#ffee00', '#44cc44', '#ff4444', '#ffffff'];
 const POI_COLORS = ['#ff44d3', '#ff8800', '#44cc44', '#4488ff', '#ffee00', '#ff4444', '#ffffff'];
@@ -736,11 +738,21 @@ function renderPois() {
         if (!hoverPopupBound) {
           try {
             const base64 = await invoke('get_poi_image_base64', { id: poi.id });
-            marker.bindPopup('<img src="data:image/png;base64,' + base64 + '" style="max-width:200px;max-height:150px;border-radius:4px">', { maxWidth: 250, closeButton: false, autoPan: false });
+            const img = new Image();
+            img.onload = () => {
+              const maxW = 200, maxH = 150;
+              const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+              const w = Math.round(img.width * scale);
+              const h = Math.round(img.height * scale);
+              marker.bindPopup('<div style="width:' + w + 'px;height:' + h + 'px;display:flex;align-items:center;justify-content:center;background:#1a2332;border-radius:4px"><img src="data:image/png;base64,' + base64 + '" style="width:' + w + 'px;height:' + h + 'px;border-radius:4px;display:block"></div>', { maxWidth: 250, closeButton: false, autoPan: false });
+              marker.openPopup();
+            };
+            img.src = 'data:image/png;base64,' + base64;
             hoverPopupBound = true;
           } catch (err) {}
+        } else {
+          marker.openPopup();
         }
-        marker.openPopup();
       });
       marker.on('click', async () => {
         marker.closePopup();
@@ -1484,6 +1496,14 @@ lockOverlayBtn.addEventListener('click', async () => {
   }
 });
 
+if (toggleCoordsBtn) {
+  toggleCoordsBtn.addEventListener('click', () => {
+    showCoords = !showCoords;
+    toggleCoordsBtn.classList.toggle('active', showCoords);
+    statusEl.textContent = showCoords ? (currentCoord ? `Letzte Koordinate: X=${currentCoord.x.toFixed(0)} Y=${currentCoord.y.toFixed(0)}` : 'Bereit') : 'Koordinaten ausgeblendet';
+  });
+}
+
 // Hi-Res Tiles Download
 const downloadHiresBtn = document.getElementById('downloadHiresBtn');
 const hiresStatus = document.getElementById('hiresStatus');
@@ -1714,17 +1734,31 @@ if (window.__TAURI__.event) {
     if (route && isRecording) {
       route.records.push(event.payload);
     }
-    statusEl.textContent = `Letzte Koordinate: X=${event.payload.x.toFixed(0)} Y=${event.payload.y.toFixed(0)}`;
+    let statusText = showCoords ? `Letzte Koordinate: X=${event.payload.x.toFixed(0)} Y=${event.payload.y.toFixed(0)}` : 'Bereit';
+    if (showCoords && navTarget && currentCoord && navRemaining && navRemaining.length >= 2) {
+      let remaining = 0;
+      for (let i = 1; i < navRemaining.length; i++) {
+        const dx = navRemaining[i].x - navRemaining[i - 1].x;
+        const dy = navRemaining[i].y - navRemaining[i - 1].y;
+        remaining += Math.sqrt(dx * dx + dy * dy);
+      }
+      const km = (remaining / 100000).toFixed(2);
+      statusText += ` · Ziel: ${km} km`;
+    } else if (showCoords && navTarget && currentCoord) {
+      const dx = navTarget.x - currentCoord.x;
+      const dy = navTarget.y - currentCoord.y;
+      const km = (Math.sqrt(dx * dx + dy * dy) / 100000).toFixed(2);
+      statusText += ` · Ziel: ${km} km (Luftlinie)`;
+    }
+    statusEl.textContent = statusText;
     const ll = gameToLatLng(currentCoord.x, currentCoord.y);
     updateLiveMarker(ll);
     updateConnectionLines();
-    if (navPendingRoute && navMode === 'nav' && navTarget) {
+    if (navPendingRoute && navTarget) {
       navPendingRoute = false;
       updateNavRoute();
-    } else if (navMode === 'nav' && navFollow && navTarget) {
+    } else if (navTarget && navMode === 'nav') {
       updateNavRoute();
-    } else if (navFollow && navRemaining) {
-      trimNavRoute();
     }
     if (followEnabled) {
       map.panTo(ll, { animate: true, duration: 0.8 });
@@ -1900,14 +1934,6 @@ if (navCalcBtn) {
 if (navClearBtn) {
   navClearBtn.addEventListener('click', clearNavRoute);
 }
-if (navFollowBtn) {
-  navFollowBtn.addEventListener('click', () => {
-    navFollow = !navFollow;
-    navFollowBtn.classList.toggle('active', navFollow);
-    if (navFollow && navRemaining) updateNavProgress();
-    if (!navFollow && navProgressEl) navProgressEl.innerHTML = '';
-  });
-}
 
 map.on('contextmenu', (e) => {
   if (!navVisible) return;
@@ -1991,7 +2017,7 @@ function drawNavRoute(route) {
   navTotalDist = totalDist;
   const km = (totalDist / 100000).toFixed(2);
   if (navInfoEl) navInfoEl.innerHTML = `Route: ca. <span class="dist">${km} km</span>`;
-  if (navFollow) updateNavProgress();
+  updateNavProgress();
 }
 
 function trimNavRoute() {
@@ -2009,8 +2035,6 @@ function trimNavRoute() {
     if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
     navRemaining = null;
     if (navProgressEl) navProgressEl.innerHTML = '<span class="done">Ziel erreicht!</span>';
-    navFollow = false;
-    if (navFollowBtn) navFollowBtn.classList.remove('active');
     return;
   }
   navRemaining = navRemaining.slice(bestIdx);
@@ -2023,6 +2047,20 @@ function trimNavRoute() {
     }).addTo(map);
   }
   updateNavProgress();
+}
+
+function needsReroute() {
+  if (!navRemaining || navRemaining.length < 2 || !currentCoord) return false;
+  const maxDist = 50000; // 500m deviation threshold
+  const maxSq = maxDist * maxDist;
+  let minSq = Infinity;
+  for (let i = 0; i < navRemaining.length; i++) {
+    const dx = navRemaining[i].x - currentCoord.x;
+    const dy = navRemaining[i].y - currentCoord.y;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < minSq) minSq = distSq;
+  }
+  return minSq > maxSq;
 }
 
 // WebSocket for nav sync (like road editor / livemap)
@@ -2059,11 +2097,7 @@ async function initNavigation() {
     connectNavWs();
     const savedTarget = await invoke('get_nav_target');
     if (savedTarget && typeof savedTarget.x === 'number' && typeof savedTarget.y === 'number') {
-      setNavTarget(savedTarget.x, savedTarget.y, true);
-      if (navPendingRoute && currentCoord) {
-        navPendingRoute = false;
-        updateNavRoute();
-      }
+      await setNavTarget(savedTarget.x, savedTarget.y, true);
     }
   } catch (err) {
     console.warn('[nav] Fehler beim Laden:', err);
@@ -2079,7 +2113,7 @@ function updateNavRoute() {
   drawNavRoute(route);
 }
 
-function setNavTarget(x, y, fromRemote) {
+async function setNavTarget(x, y, fromRemote) {
   navTarget = { x, y };
   RoadNavigator.setTarget(x, y);
   if (navEndMarker) map.removeLayer(navEndMarker);
@@ -2090,13 +2124,17 @@ function setNavTarget(x, y, fromRemote) {
   }).addTo(map);
   navEndMarker.on('click', () => clearNavRoute());
   if (navEndEl) navEndEl.textContent = `X=${x.toFixed(0)} Y=${y.toFixed(0)}`;
-  if (!fromRemote) invoke('set_nav_target', { x, y });
-  if (navMode === 'nav') {
-    if (currentCoord) {
-      updateNavRoute();
-    } else {
-      navPendingRoute = true;
-    }
+  if (!fromRemote) {
+    try { await invoke('set_nav_target', { x, y }); } catch (e) { console.warn('[nav] set_nav_target fehlgeschlagen:', e); }
+  }
+  if (!currentCoord) {
+    try { await syncPlayerPosition(); } catch (e) {}
+  }
+  if (currentCoord) {
+    navPendingRoute = false;
+    updateNavRoute();
+  } else {
+    navPendingRoute = true;
   }
 }
 
@@ -2108,8 +2146,6 @@ function clearNavRoute(fromRemote) {
   navRouteStart = null;
   navRemaining = null;
   navTotalDist = 0;
-  navFollow = false;
-  if (navFollowBtn) navFollowBtn.classList.remove('active');
   if (navStartEl) navStartEl.textContent = '– Rechtsklick setzen';
   if (navEndEl) navEndEl.textContent = '– Rechtsklick setzen';
   if (navInfoEl) navInfoEl.innerHTML = '';
