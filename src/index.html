@@ -157,26 +157,16 @@
           <label class="settings-label check"><input id="settingsAutoLockOverlay" type="checkbox"> Overlay automatisch sperren (Klick-durch)</label>
         </div>
         <div class="settings-section">
-          <h4>Farben</h4>
-          <label class="settings-label">Navigations-Route
-            <input id="settingsNavRouteColor" type="color" value="#00ffcc" style="width:100%; margin-top:6px; height:32px; background:#222; border:1px solid #444; border-radius:4px; cursor:pointer;">
-          </label>
-          <label class="settings-label">Auto-POI-Farbe
-            <input id="settingsAutoPoiColor" type="color" value="#ff8800" style="width:100%; margin-top:6px; height:32px; background:#222; border:1px solid #444; border-radius:4px; cursor:pointer;">
+          <h4>Navigation</h4>
+          <label class="settings-label">Routen-Farbe
+            <div class="color-input-row">
+              <input id="settingsNavRouteColor" type="color" value="#00ffcc" data-default="#00ffcc" style="flex:1; height:32px; background:#222; border:1px solid #444; border-radius:4px; cursor:pointer;">
+              <button id="settingsResetNavRouteColor" type="button" class="reset-color-btn" title="Zurücksetzen">↺</button>
+            </div>
           </label>
         </div>
         <div class="settings-section">
           <h4>Auto-POI</h4>
-          <label class="settings-label check"><input id="settingsAutoPoiUseSector" type="checkbox" checked> Sektorkategorie verwenden</label>
-          <label class="settings-label">Eigene Kategorie
-            <input id="settingsAutoPoiCategory" type="text" placeholder="z. B. Auto-POI" style="width:100%; margin-top:6px;">
-          </label>
-          <label class="settings-label">Namenspräfix
-            <input id="settingsAutoPoiPrefix" type="text" value="POI" style="width:100%; margin-top:6px;">
-          </label>
-        </div>
-        <div class="settings-section">
-          <h4>Hotkeys</h4>
           <div class="settings-row">
             <label class="settings-label">POI-Hotkey</label>
             <div class="hotkey-input-row">
@@ -184,6 +174,22 @@
               <button id="settingsRecordPoiHotkey" type="button">Aufzeichnen</button>
             </div>
           </div>
+          <label class="settings-label check"><input id="settingsAutoPoiUseSector" type="checkbox" checked> Sektorkategorie verwenden</label>
+          <label class="settings-label">Eigene Kategorie
+            <input id="settingsAutoPoiCategory" type="text" placeholder="z. B. Auto-POI" style="width:100%; margin-top:6px;">
+          </label>
+          <label class="settings-label">Namenspräfix
+            <input id="settingsAutoPoiPrefix" type="text" value="POI" style="width:100%; margin-top:6px;">
+          </label>
+          <label class="settings-label">Auto-POI-Farbe
+            <div class="color-input-row">
+              <input id="settingsAutoPoiColor" type="color" value="#ff8800" data-default="#ff8800" style="flex:1; height:32px; background:#222; border:1px solid #444; border-radius:4px; cursor:pointer;">
+              <button id="settingsResetAutoPoiColor" type="button" class="reset-color-btn" title="Zurücksetzen">↺</button>
+            </div>
+          </label>
+        </div>
+        <div class="settings-section">
+          <h4>Hotkeys</h4>
           <div class="settings-row">
             <label class="settings-label">Bigmap-Hotkey</label>
             <div class="hotkey-input-row">
@@ -198,6 +204,15 @@
               <button id="settingsRecordRecenterHotkey" type="button">Aufzeichnen</button>
             </div>
           </div>
+        </div>
+        <div class="settings-section">
+          <h4>Sprache</h4>
+          <label class="settings-label">Anzeigesprache
+            <select id="settingsLanguage" disabled style="width:100%; margin-top:6px; padding:6px; background:#222; border:1px solid #444; border-radius:4px; color:#888;">
+              <option>Deutsch (bald verfügbar)</option>
+              <option>English (coming soon)</option>
+            </select>
+          </label>
         </div>
         <div class="settings-actions">
           <button id="settingsSave" class="primary">Speichern</button>

@@ -523,48 +523,51 @@ const VK_RCONTROL: u16 = 0xA3;
 /// Wandelt eine Hotkey-Angabe wie "F9", "AltGr+M", "Ctrl+Shift+P" in eine
 /// Liste von Virtual-Key-Codes um, die dann mit `is_key_pressed` geprüft werden
 /// können. Reihenfolge ist egal; Modifier und Haupttaste werden einzeln geprüft.
+/// Gibt `None` zurück, wenn ein unbekannter Teil im Hotkey enthalten ist.
 #[cfg(windows)]
-fn parse_hotkey(combo: &str) -> Vec<u16> {
-    combo
-        .split('+')
-        .map(|s| s.trim().to_ascii_uppercase())
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| match s.as_str() {
-            "ALTGR" | "RALT" => Some(VK_RMENU),
-            "ALT" => Some(VK_MENU),
-            "LALT" => Some(VK_LMENU),
-            "CTRL" | "CONTROL" => Some(VK_CONTROL.0),
-            "LCTRL" => Some(VK_LCONTROL),
-            "RCTRL" => Some(VK_RCONTROL),
-            "SHIFT" => Some(VK_SHIFT),
-            "LSHIFT" => Some(VK_LSHIFT),
-            "RSHIFT" => Some(VK_RSHIFT),
+fn parse_hotkey(combo: &str) -> Option<Vec<u16>> {
+    let mut vks = Vec::new();
+    for s in combo.split('+').map(|s| s.trim().to_ascii_uppercase()).filter(|s| !s.is_empty()) {
+        let vk = match s.as_str() {
+            "ALTGR" | "RALT" => VK_RMENU,
+            "ALT" => VK_MENU,
+            "LALT" => VK_LMENU,
+            "CTRL" | "CONTROL" => VK_CONTROL.0,
+            "LCTRL" => VK_LCONTROL,
+            "RCTRL" => VK_RCONTROL,
+            "SHIFT" => VK_SHIFT,
+            "LSHIFT" => VK_LSHIFT,
+            "RSHIFT" => VK_RSHIFT,
             _ => {
                 if s.starts_with('F') {
-                    s[1..].parse::<u32>().ok().and_then(|n| {
+                    if let Ok(n) = s[1..].parse::<u32>() {
                         if (1..=24).contains(&n) {
-                            Some(0x6F + n as u16)
+                            0x6F + n as u16
                         } else {
-                            None
+                            return None;
                         }
-                    })
+                    } else {
+                        return None;
+                    }
                 } else if s.len() == 1 {
                     let c = s.chars().next().unwrap();
                     if ('A'..='Z').contains(&c) {
-                        Some((c as u16) - ('A' as u16) + 0x41)
+                        (c as u16) - ('A' as u16) + 0x41
                     } else if ('0'..='9').contains(&c) {
-                        Some((c as u16) - ('0' as u16) + 0x30)
+                        (c as u16) - ('0' as u16) + 0x30
                     } else if c == ' ' {
-                        Some(0x20)
+                        0x20
                     } else {
-                        None
+                        return None;
                     }
                 } else {
-                    None
+                    return None;
                 }
             }
-        })
-        .collect()
+        };
+        vks.push(vk);
+    }
+    if vks.is_empty() { None } else { Some(vks) }
 }
 
 #[cfg(windows)]
@@ -596,7 +599,7 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         let mut clipboard = Clipboard::new().expect("clipboard");
         let processing = Arc::new(std::sync::atomic::AtomicBool::new(false));
         loop {
-            let hotkey = parse_hotkey(&state.data.lock().unwrap().poi_hotkey);
+            let hotkey = parse_hotkey(&state.data.lock().unwrap().poi_hotkey).unwrap_or_default();
             if is_hotkey_pressed(&hotkey) && is_scum_foreground() {
                 // Block if already processing
                 if processing.load(std::sync::atomic::Ordering::SeqCst) {
@@ -857,7 +860,7 @@ fn start_bigmap_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandl
             let bigmap_fg = is_bigmap_foreground(&app_handle);
             // Opening requires SCUM foreground; closing also works while the bigmap
             // window itself has focus (e.g. right after clicking on it).
-            let bigmap_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_hotkey);
+            let bigmap_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_hotkey).unwrap_or_default();
             let combo_pressed = (scum_fg || bigmap_fg) && is_hotkey_pressed(&bigmap_hotkey);
 
             if combo_pressed && !combo_down {
@@ -917,7 +920,7 @@ fn start_nav_hotkey_watcher(state: Arc<AppState>, _app_handle: tauri::AppHandle)
         loop {
             let scum_fg = is_scum_foreground();
             let bigmap_fg = is_bigmap_foreground(&_app_handle);
-            let recenter_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_recenter_hotkey);
+            let recenter_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_recenter_hotkey).unwrap_or_default();
             let combo_pressed = (scum_fg || bigmap_fg) && is_hotkey_pressed(&recenter_hotkey);
 
             if combo_pressed && !combo_down {
@@ -1440,7 +1443,18 @@ fn get_settings(state: State<Arc<AppState>>) -> AppSettings {
 }
 
 #[tauri::command]
-fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> AppSettings {
+fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<AppSettings, String> {
+    let hotkeys = [
+        ("POI-Hotkey", &settings.poi_hotkey),
+        ("Bigmap-Hotkey", &settings.bigmap_hotkey),
+        ("Recenter-Hotkey", &settings.bigmap_recenter_hotkey),
+    ];
+    for (name, combo) in hotkeys {
+        if parse_hotkey(combo.trim()).is_none() {
+            return Err(format!("{} ist ungültig: '{}'", name, combo));
+        }
+    }
+
     let mut data = state.data.lock().unwrap();
     data.tracking_interval = settings.tracking_interval.max(1);
     data.auto_start_live_tracking = settings.auto_start_live_tracking;
@@ -1459,7 +1473,7 @@ fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> AppSetti
     // Keep the runtime nav route color state in sync so overlays pick it up immediately.
     apply_nav_route_color(&state, &data.nav_route_color);
 
-    settings_from_data(&data)
+    Ok(settings_from_data(&data))
 }
 
 fn validate_hex_color(color: &str) -> Option<String> {

@@ -1259,9 +1259,10 @@ button:hover { background: #3a3a3a; }
 .settings-row { margin-bottom: 10px; }
 .settings-row .settings-label { margin-bottom: 4px; }
 
-.hotkey-input-row {
+.hotkey-input-row, .color-input-row {
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 .hotkey-input-row input {
   flex: 1;
@@ -1300,6 +1301,20 @@ button:hover { background: #3a3a3a; }
   white-space: nowrap;
 }
 .hotkey-input-row button:hover { background: #333; }
+
+.reset-color-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #ddd;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.reset-color-btn:hover { background: #333; color: #00ffcc; }
 
 .settings-actions {
   display: flex;

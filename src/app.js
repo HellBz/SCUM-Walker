@@ -2355,6 +2355,14 @@ async function saveSettings() {
 }
 if (settingsSave) settingsSave.addEventListener('click', saveSettings);
 
+function resetColorInput(input) {
+  if (!input) return;
+  input.value = input.dataset.default || input.value;
+}
+
+document.getElementById('settingsResetNavRouteColor')?.addEventListener('click', () => resetColorInput(settingsNavRouteColor));
+document.getElementById('settingsResetAutoPoiColor')?.addEventListener('click', () => resetColorInput(settingsAutoPoiColor));
+
 loadSettings();
 
 initNavigation();
