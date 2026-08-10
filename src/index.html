@@ -35,8 +35,7 @@
       </div>
       <div id="livemapSectionBody">
       <div class="button-row">
-        <button id="toggleLiveTracking">Live-Tracking starten</button>
-        <input id="trackingInterval" type="number" min="1" max="60" value="10" title="Update-Intervall in Sekunden" style="width:50px">s
+        <button id="toggleLiveTracking" style="width:100%">Live-Tracking starten</button>
       </div>
       <div class="button-row">
         <button id="openOverlay" title="Overlay öffnen">Overlay öffnen</button>
@@ -135,6 +134,57 @@
       </div>
       <div class="nav-info" id="navInfo"></div>
       <div class="nav-progress" id="navProgress"></div>
+    </div>
+
+    <button id="settingsToggle" class="settings-toggle" title="Einstellungen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+
+    <div id="settingsPanel" class="settings-panel">
+      <div class="settings-header">
+        <h3>Einstellungen</h3>
+        <button id="settingsClose" class="icon-btn" title="Schließen">X</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-section">
+          <h4>Tracking</h4>
+          <label class="settings-label">Update-Intervall (Sekunden)
+            <input id="settingsTrackingInterval" type="number" min="1" max="300" value="10">
+          </label>
+          <label class="settings-label check"><input id="settingsAutoStartTracking" type="checkbox"> Live-Tracking beim Start automatisch starten</label>
+        </div>
+        <div class="settings-section">
+          <h4>Overlay</h4>
+          <label class="settings-label check"><input id="settingsAutoOpenOverlay" type="checkbox"> Overlay beim Start automatisch öffnen</label>
+          <label class="settings-label check"><input id="settingsAutoLockOverlay" type="checkbox"> Overlay automatisch sperren (Klick-durch)</label>
+        </div>
+        <div class="settings-section">
+          <h4>Hotkeys</h4>
+          <div class="settings-row">
+            <label class="settings-label">POI-Hotkey</label>
+            <div class="hotkey-input-row">
+              <input id="settingsPoiHotkey" type="text" readonly value="F9">
+              <button id="settingsRecordPoiHotkey" type="button">Aufzeichnen</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">Bigmap-Hotkey</label>
+            <div class="hotkey-input-row">
+              <input id="settingsBigmapHotkey" type="text" readonly value="AltGr+M">
+              <button id="settingsRecordBigmapHotkey" type="button">Aufzeichnen</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">Recenter-Hotkey</label>
+            <div class="hotkey-input-row">
+              <input id="settingsRecenterHotkey" type="text" readonly value="AltGr+N">
+              <button id="settingsRecordRecenterHotkey" type="button">Aufzeichnen</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button id="settingsSave" class="primary">Speichern</button>
+          <span id="settingsSaveStatus" style="color:#888; font-size:12px; margin-left:8px;"></span>
+        </div>
+      </div>
     </div>
 
     <div id="poiDialog" class="dialog">

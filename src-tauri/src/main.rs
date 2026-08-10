@@ -150,6 +150,18 @@ struct AppData {
     poi_connections: Vec<String>,
     #[serde(default)]
     player_position: Option<CoordRecord>,
+    #[serde(default)]
+    auto_start_live_tracking: bool,
+    #[serde(default)]
+    auto_open_overlay: bool,
+    #[serde(default)]
+    auto_lock_overlay: bool,
+    #[serde(default = "default_poi_hotkey")]
+    poi_hotkey: String,
+    #[serde(default = "default_bigmap_hotkey")]
+    bigmap_hotkey: String,
+    #[serde(default = "default_bigmap_recenter_hotkey")]
+    bigmap_recenter_hotkey: String,
 }
 
 fn default_interval() -> u64 {
@@ -158,6 +170,18 @@ fn default_interval() -> u64 {
 
 fn default_hidden_categories() -> Vec<String> {
     Vec::new()
+}
+
+fn default_poi_hotkey() -> String {
+    "F9".to_string()
+}
+
+fn default_bigmap_hotkey() -> String {
+    "AltGr+M".to_string()
+}
+
+fn default_bigmap_recenter_hotkey() -> String {
+    "AltGr+N".to_string()
 }
 
 pub(crate) struct AppState {
@@ -456,19 +480,75 @@ fn find_scum_window() -> Option<HWND> {
 fn find_scum_window() -> Option<()> { None }
 
 #[cfg(windows)]
-const VK_T: u16 = 0x54;
-#[cfg(windows)]
-const VK_F9: u16 = 0x78;
-#[cfg(windows)]
-const VK_RETURN: u16 = 0x0D;
-#[cfg(windows)]
 const VK_ESCAPE: u16 = 0x1B;
 #[cfg(windows)]
 const VK_RMENU: u16 = 0xA5; // right Alt / AltGr
 #[cfg(windows)]
-const VK_M: u16 = 0x4D;
+const VK_LMENU: u16 = 0xA4;
 #[cfg(windows)]
-const VK_N: u16 = 0x4E;
+const VK_MENU: u16 = 0x12;  // generic Alt (left or right)
+#[cfg(windows)]
+const VK_SHIFT: u16 = 0x10;
+#[cfg(windows)]
+const VK_LSHIFT: u16 = 0xA0;
+#[cfg(windows)]
+const VK_RSHIFT: u16 = 0xA1;
+#[cfg(windows)]
+const VK_LCONTROL: u16 = 0xA2;
+#[cfg(windows)]
+const VK_RCONTROL: u16 = 0xA3;
+
+/// Wandelt eine Hotkey-Angabe wie "F9", "AltGr+M", "Ctrl+Shift+P" in eine
+/// Liste von Virtual-Key-Codes um, die dann mit `is_key_pressed` geprüft werden
+/// können. Reihenfolge ist egal; Modifier und Haupttaste werden einzeln geprüft.
+#[cfg(windows)]
+fn parse_hotkey(combo: &str) -> Vec<u16> {
+    combo
+        .split('+')
+        .map(|s| s.trim().to_ascii_uppercase())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| match s.as_str() {
+            "ALTGR" | "RALT" => Some(VK_RMENU),
+            "ALT" => Some(VK_MENU),
+            "LALT" => Some(VK_LMENU),
+            "CTRL" | "CONTROL" => Some(VK_CONTROL.0),
+            "LCTRL" => Some(VK_LCONTROL),
+            "RCTRL" => Some(VK_RCONTROL),
+            "SHIFT" => Some(VK_SHIFT),
+            "LSHIFT" => Some(VK_LSHIFT),
+            "RSHIFT" => Some(VK_RSHIFT),
+            _ => {
+                if s.starts_with('F') {
+                    s[1..].parse::<u32>().ok().and_then(|n| {
+                        if (1..=24).contains(&n) {
+                            Some(0x6F + n as u16)
+                        } else {
+                            None
+                        }
+                    })
+                } else if s.len() == 1 {
+                    let c = s.chars().next().unwrap();
+                    if ('A'..='Z').contains(&c) {
+                        Some((c as u16) - ('A' as u16) + 0x41)
+                    } else if ('0'..='9').contains(&c) {
+                        Some((c as u16) - ('0' as u16) + 0x30)
+                    } else if c == ' ' {
+                        Some(0x20)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn is_hotkey_pressed(vks: &[u16]) -> bool {
+    !vks.is_empty() && vks.iter().all(|&vk| is_key_pressed(vk))
+}
 
 #[cfg(windows)]
 fn is_key_pressed(vk: u16) -> bool {
@@ -494,21 +574,22 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         let mut clipboard = Clipboard::new().expect("clipboard");
         let processing = Arc::new(std::sync::atomic::AtomicBool::new(false));
         loop {
-            if is_key_pressed(VK_F9) && is_scum_foreground() {
+            let hotkey = parse_hotkey(&state.data.lock().unwrap().poi_hotkey);
+            if is_hotkey_pressed(&hotkey) && is_scum_foreground() {
                 // Block if already processing
                 if processing.load(std::sync::atomic::Ordering::SeqCst) {
-                    while is_key_pressed(VK_F9) {
+                    while is_hotkey_pressed(&hotkey) {
                         thread::sleep(Duration::from_millis(50));
                     }
                     continue;
                 }
                 processing.store(true, std::sync::atomic::Ordering::SeqCst);
-                eprintln!("[hotkey] F9 gedrückt - erstelle POI + Screenshot");
+                eprintln!("[hotkey] {} gedrückt - erstelle POI + Screenshot", state.data.lock().unwrap().poi_hotkey);
                 ws_broadcast(serde_json::json!(["poi-creating", null]).to_string());
 
                 // 1. Ctrl+C an SCUM senden und Koordinaten robust aus der Zwischenablage lesen
-                let record = match capture_scum_coord(&mut clipboard, 300) {
-                    Ok(r) => r,
+                let record = match capture_scum_coord(&mut clipboard, 300, true) {
+                    Ok((r, _)) => r,
                     Err(e) => {
                         eprintln!("[hotkey] Positionsabfrage fehlgeschlagen: {}", e);
                         processing.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -573,8 +654,8 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 
                 processing.store(false, std::sync::atomic::Ordering::SeqCst);
 
-                // Verhindern, dass F9 mehrfach triggert
-                while is_key_pressed(VK_F9) {
+                // Verhindern, dass der Hotkey mehrfach triggert
+                while is_hotkey_pressed(&hotkey) {
                     thread::sleep(Duration::from_millis(50));
                 }
             }
@@ -740,7 +821,8 @@ fn start_bigmap_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandl
             let bigmap_fg = is_bigmap_foreground(&app_handle);
             // Opening requires SCUM foreground; closing also works while the bigmap
             // window itself has focus (e.g. right after clicking on it).
-            let combo_pressed = (scum_fg || bigmap_fg) && is_key_pressed(VK_RMENU) && is_key_pressed(VK_M);
+            let bigmap_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_hotkey);
+            let combo_pressed = (scum_fg || bigmap_fg) && is_hotkey_pressed(&bigmap_hotkey);
 
             if combo_pressed && !combo_down {
                 combo_down = true;
@@ -799,7 +881,8 @@ fn start_nav_hotkey_watcher(state: Arc<AppState>, _app_handle: tauri::AppHandle)
         loop {
             let scum_fg = is_scum_foreground();
             let bigmap_fg = is_bigmap_foreground(&_app_handle);
-            let combo_pressed = (scum_fg || bigmap_fg) && is_key_pressed(VK_RMENU) && is_key_pressed(VK_N);
+            let recenter_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_recenter_hotkey);
+            let combo_pressed = (scum_fg || bigmap_fg) && is_hotkey_pressed(&recenter_hotkey);
 
             if combo_pressed && !combo_down {
                 combo_down = true;
@@ -984,17 +1067,22 @@ fn send_ctrl_c_to_scum() -> Result<(), String> {
 }
 
 /// Sendet Strg+C an SCUM und liest die kopierten Koordinaten aus der
-/// Zwischenablage aus. Um zuverlässig zu erkennen, ob der Kopiervorgang durch
-/// Lag im Spiel tatsächlich stattgefunden hat (statt versehentlich einen
-/// veralteten/alten Zwischenablage-Inhalt als aktuelle Position zu
-/// übernehmen), wird die Zwischenablage vor dem Senden geleert. Nur wenn
-/// danach wirklich neuer, gültiger Text ankommt, gilt der Vorgang als
-/// erfolgreich. Der vorherige Inhalt der Zwischenablage wird anschließend
-/// wiederhergestellt, damit z.B. eine vom Nutzer zuvor kopierte Chat-Nachricht
-/// nicht verloren geht.
-fn capture_scum_coord(clipboard: &mut Clipboard, wait_ms: u64) -> Result<CoordRecord, String> {
-    let previous = clipboard.get_text().ok();
-    let _ = clipboard.clear();
+/// Zwischenablage aus.
+///
+/// Bei `preserve_clipboard = true` wird der bisherige Inhalt gesichert, die
+/// Zwischenablage vor dem Senden geleert und der alte Inhalt danach wieder
+/// hergestellt. Nur wenn danach wirklich neuer, gültiger Text ankommt, gilt
+/// der Vorgang als erfolgreich. Das ist sicher, verursacht aber bei sehr
+/// kurzen Tracking-Intervallen Overhead.
+///
+/// Bei `preserve_clipboard = false` wird die Zwischenablage nicht geleert und
+/// nicht wiederhergestellt. Der Aufrufer muss selbst prüfen, ob der Wert
+/// tatsächlich neu ist (z. B. durch Vergleich mit dem vorherigen Text).
+fn capture_scum_coord(clipboard: &mut Clipboard, wait_ms: u64, preserve_clipboard: bool) -> Result<(CoordRecord, String), String> {
+    let previous = if preserve_clipboard { clipboard.get_text().ok() } else { None };
+    if preserve_clipboard {
+        let _ = clipboard.clear();
+    }
 
     let result = (|| {
         send_ctrl_c_to_scum()?;
@@ -1002,13 +1090,16 @@ fn capture_scum_coord(clipboard: &mut Clipboard, wait_ms: u64) -> Result<CoordRe
         let text = clipboard.get_text().map_err(|_| {
             "Zwischenablage blieb leer (Strg+C wurde vom Spiel vermutlich nicht verarbeitet, z.B. durch Lag)".to_string()
         })?;
-        parse_clipboard(&text).ok_or_else(|| "Keine gültigen Koordinaten in der Zwischenablage".to_string())
+        let record = parse_clipboard(&text).ok_or_else(|| "Keine gültigen Koordinaten in der Zwischenablage".to_string())?;
+        Ok((record, text))
     })();
 
-    if let Some(prev) = previous {
-        let _ = clipboard.set_text(prev);
-    } else {
-        let _ = clipboard.clear();
+    if preserve_clipboard {
+        if let Some(prev) = previous {
+            let _ = clipboard.set_text(prev);
+        } else {
+            let _ = clipboard.clear();
+        }
     }
 
     result
@@ -1168,7 +1259,7 @@ fn capture_scum_window() -> Option<image::RgbaImage> { None }
 #[tauri::command]
 fn get_current_location(state: State<Arc<AppState>>) -> Result<CoordRecord, String> {
     if let Ok(mut clipboard) = Clipboard::new() {
-        if let Ok(record) = capture_scum_coord(&mut clipboard, 300) {
+        if let Ok((record, _)) = capture_scum_coord(&mut clipboard, 300, true) {
             return Ok(record);
         }
     }
@@ -1186,6 +1277,7 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         let mut clipboard = Clipboard::new().expect("clipboard");
         let mut last_scum_status = true;
         let mut last_tracking_error: Option<String> = None;
+        let mut last_scum_text: Option<String> = None;
         loop {
             let tracking = *state.live_tracking.lock().unwrap();
             if tracking {
@@ -1200,7 +1292,13 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
-                match capture_scum_coord(&mut clipboard, 500) {
+                let interval = state.data.lock().unwrap().tracking_interval;
+                // Ab 10 Sekunden Intervall ist das ständige Leeren/Wiederherstellen
+                // der Zwischenablage vertretbar; bei kürzeren Intervallen lassen wir
+                // die Zwischenablage unberührt und erkennen fehlgeschlagene Kopien
+                // daran, dass sich der Inhalt nicht geändert hat.
+                let preserve_clipboard = interval >= 10;
+                match capture_scum_coord(&mut clipboard, 500, preserve_clipboard) {
                     Err(err) => {
                         if last_tracking_error.as_deref() != Some(err.as_str()) {
                             eprintln!("[recorder] Positionsabfrage fehlgeschlagen: {}", err);
@@ -1212,8 +1310,14 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                         thread::sleep(Duration::from_secs(interval));
                         continue;
                     }
-                    Ok(record) => {
+                    Ok((record, text)) => {
                         last_tracking_error = None;
+                        if last_scum_text.as_ref() == Some(&text) {
+                            let interval = state.data.lock().unwrap().tracking_interval;
+                            thread::sleep(Duration::from_secs(interval));
+                            continue;
+                        }
+                        last_scum_text = Some(text);
                         let should_emit = {
                             let mut pos = state.current_position.lock().unwrap();
                             let changed = pos.as_ref().map_or(true, |last| {
@@ -1259,6 +1363,48 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
 #[tauri::command]
 fn get_data(state: State<Arc<AppState>>) -> AppData {
     state.data.lock().unwrap().clone()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppSettings {
+    tracking_interval: u64,
+    auto_start_live_tracking: bool,
+    auto_open_overlay: bool,
+    auto_lock_overlay: bool,
+    poi_hotkey: String,
+    bigmap_hotkey: String,
+    bigmap_recenter_hotkey: String,
+}
+
+fn settings_from_data(data: &AppData) -> AppSettings {
+    AppSettings {
+        tracking_interval: data.tracking_interval.max(1),
+        auto_start_live_tracking: data.auto_start_live_tracking,
+        auto_open_overlay: data.auto_open_overlay,
+        auto_lock_overlay: data.auto_lock_overlay,
+        poi_hotkey: data.poi_hotkey.clone(),
+        bigmap_hotkey: data.bigmap_hotkey.clone(),
+        bigmap_recenter_hotkey: data.bigmap_recenter_hotkey.clone(),
+    }
+}
+
+#[tauri::command]
+fn get_settings(state: State<Arc<AppState>>) -> AppSettings {
+    settings_from_data(&state.data.lock().unwrap())
+}
+
+#[tauri::command]
+fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> AppSettings {
+    let mut data = state.data.lock().unwrap();
+    data.tracking_interval = settings.tracking_interval.max(1);
+    data.auto_start_live_tracking = settings.auto_start_live_tracking;
+    data.auto_open_overlay = settings.auto_open_overlay;
+    data.auto_lock_overlay = settings.auto_lock_overlay;
+    data.poi_hotkey = settings.poi_hotkey.trim().to_string();
+    data.bigmap_hotkey = settings.bigmap_hotkey.trim().to_string();
+    data.bigmap_recenter_hotkey = settings.bigmap_recenter_hotkey.trim().to_string();
+    save_data(&state.data_path, &data);
+    settings_from_data(&data)
 }
 
 fn escape_csv(value: &str) -> String {
@@ -2187,6 +2333,11 @@ fn main() {
             });
             *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
+            if state.data.lock().unwrap().auto_start_live_tracking {
+                *state.live_tracking.lock().unwrap() = true;
+                let _ = app.handle().emit("live-tracking-state", true);
+            }
+
             #[cfg(windows)]
             start_hotkey_watcher(state.clone(), app.handle().clone());
             #[cfg(windows)]
@@ -2202,10 +2353,19 @@ fn main() {
             }
             ensure_lowres_tiles(&tiles_dir);
             http_server::start_http_server(state.clone(), tiles_dir.display().to_string());
-            app.manage(state);
 
             let overlay_config = load_overlay_config(&overlay_config_path(&app.handle()));
             let _ = create_overlay_window(&app.handle(), &overlay_config);
+
+            let settings = settings_from_data(&state.data.lock().unwrap());
+            if settings.auto_open_overlay {
+                let _ = open_overlay(app.handle().clone());
+            }
+            if settings.auto_lock_overlay {
+                let _ = set_overlay_clickthrough(app.handle().clone(), true);
+            }
+
+            app.manage(state);
 
             Ok(())
         })
@@ -2230,6 +2390,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_data,
+            get_settings,
+            save_settings,
             export_data,
             get_version,
             check_update,

@@ -1382,34 +1382,12 @@ document.getElementById('poiSave').addEventListener('click', async () => {
 
 // Live tracking toggle
 let isLiveTracking = false;
-let trackingInterval = 3;
+let trackingInterval = 10;
 const liveTrackingBtn = document.getElementById('toggleLiveTracking');
-const trackingIntervalInput = document.getElementById('trackingInterval');
 
 function updateMarkerTransition() {
   const dur = Math.max(0.5, trackingInterval - 0.1);
   document.documentElement.style.setProperty('--marker-transition', `${dur}s linear`);
-}
-
-async function syncTrackingInterval() {
-  try {
-    trackingInterval = await invoke('get_tracking_interval');
-    if (trackingIntervalInput) trackingIntervalInput.value = trackingInterval;
-    updateMarkerTransition();
-  } catch (err) {}
-}
-syncTrackingInterval();
-
-if (trackingIntervalInput) {
-  trackingIntervalInput.addEventListener('change', async () => {
-    let val = parseInt(trackingIntervalInput.value);
-    if (isNaN(val) || val < 1) val = 1;
-    if (val > 60) val = 60;
-    trackingIntervalInput.value = val;
-    trackingInterval = val;
-    updateMarkerTransition();
-    await invoke('set_tracking_interval', { seconds: val });
-  });
 }
 
 async function syncLiveTrackingState() {
@@ -1421,6 +1399,15 @@ async function syncLiveTrackingState() {
   if (liveTrackingBtn) {
     liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
   }
+}
+
+if (window.__TAURI__.event) {
+  window.__TAURI__.event.listen('live-tracking-state', (e) => {
+    isLiveTracking = !!e.payload;
+    if (liveTrackingBtn) {
+      liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
+    }
+  });
 }
 
 liveTrackingBtn.addEventListener('click', async () => {
@@ -2201,6 +2188,125 @@ function clearNavRoute(fromRemote) {
   if (navProgressEl) navProgressEl.innerHTML = '';
   if (!fromRemote) invoke('clear_nav_target');
 }
+
+// === Settings panel ===
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsPanel = document.getElementById('settingsPanel');
+const settingsClose = document.getElementById('settingsClose');
+const settingsTrackingInterval = document.getElementById('settingsTrackingInterval');
+const settingsAutoStartTracking = document.getElementById('settingsAutoStartTracking');
+const settingsAutoOpenOverlay = document.getElementById('settingsAutoOpenOverlay');
+const settingsAutoLockOverlay = document.getElementById('settingsAutoLockOverlay');
+const settingsPoiHotkey = document.getElementById('settingsPoiHotkey');
+const settingsBigmapHotkey = document.getElementById('settingsBigmapHotkey');
+const settingsRecenterHotkey = document.getElementById('settingsRecenterHotkey');
+const settingsSave = document.getElementById('settingsSave');
+const settingsSaveStatus = document.getElementById('settingsSaveStatus');
+
+let recordingTarget = null;
+
+function formatHotkey(e) {
+  const parts = [];
+  const isAltGr = e.getModifierState && e.getModifierState('AltGraph');
+  if (isAltGr) {
+    parts.push('AltGr');
+  } else {
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+  }
+  if (e.shiftKey) parts.push('Shift');
+
+  const ignore = ['Control', 'Alt', 'Shift', 'AltGraph', 'Meta', 'OS'];
+  let key = e.key;
+  if (!key || ignore.includes(key)) return null;
+  if (key.length === 1) key = key.toUpperCase();
+  parts.push(key);
+  return parts.join('+');
+}
+
+function startRecording(input) {
+  recordingTarget = input;
+  input.value = 'Taste drücken...';
+  input.classList.add('recording');
+}
+
+function stopRecording() {
+  if (!recordingTarget) return;
+  recordingTarget.classList.remove('recording');
+  recordingTarget = null;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (!recordingTarget) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const combo = formatHotkey(e);
+  if (combo) {
+    recordingTarget.value = combo;
+    stopRecording();
+  }
+}, true);
+
+['settingsRecordPoiHotkey', 'settingsRecordBigmapHotkey', 'settingsRecordRecenterHotkey'].forEach((btnId, idx) => {
+  const btn = document.getElementById(btnId);
+  const input = [settingsPoiHotkey, settingsBigmapHotkey, settingsRecenterHotkey][idx];
+  if (btn && input) {
+    btn.addEventListener('click', () => startRecording(input));
+  }
+});
+
+function toggleSettingsPanel(show) {
+  if (settingsPanel) settingsPanel.classList.toggle('visible', show);
+}
+if (settingsToggle && settingsPanel) settingsToggle.addEventListener('click', () => toggleSettingsPanel(!settingsPanel.classList.contains('visible')));
+if (settingsClose) settingsClose.addEventListener('click', () => toggleSettingsPanel(false));
+
+async function loadSettings() {
+  try {
+    const s = await invoke('get_settings');
+    if (settingsTrackingInterval) settingsTrackingInterval.value = s.tracking_interval;
+    if (settingsAutoStartTracking) settingsAutoStartTracking.checked = s.auto_start_live_tracking;
+    if (settingsAutoOpenOverlay) settingsAutoOpenOverlay.checked = s.auto_open_overlay;
+    if (settingsAutoLockOverlay) settingsAutoLockOverlay.checked = s.auto_lock_overlay;
+    if (settingsPoiHotkey) settingsPoiHotkey.value = s.poi_hotkey;
+    if (settingsBigmapHotkey) settingsBigmapHotkey.value = s.bigmap_hotkey;
+    if (settingsRecenterHotkey) settingsRecenterHotkey.value = s.bigmap_recenter_hotkey;
+    trackingInterval = s.tracking_interval || 10;
+    updateMarkerTransition();
+  } catch (err) {
+    console.error('[settings] load failed', err);
+  }
+}
+
+async function saveSettings() {
+  try {
+    let interval = parseInt(settingsTrackingInterval?.value || '10', 10);
+    if (isNaN(interval) || interval < 1) interval = 1;
+    if (interval > 300) interval = 300;
+    const payload = {
+      tracking_interval: interval,
+      auto_start_live_tracking: settingsAutoStartTracking?.checked || false,
+      auto_open_overlay: settingsAutoOpenOverlay?.checked || false,
+      auto_lock_overlay: settingsAutoLockOverlay?.checked || false,
+      poi_hotkey: settingsPoiHotkey?.value || 'F9',
+      bigmap_hotkey: settingsBigmapHotkey?.value || 'AltGr+M',
+      bigmap_recenter_hotkey: settingsRecenterHotkey?.value || 'AltGr+N',
+    };
+    await invoke('save_settings', { settings: payload });
+    trackingInterval = payload.tracking_interval;
+    updateMarkerTransition();
+    if (settingsSaveStatus) {
+      settingsSaveStatus.textContent = 'Gespeichert';
+      setTimeout(() => { settingsSaveStatus.textContent = ''; }, 2000);
+    }
+  } catch (err) {
+    console.error('[settings] save failed', err);
+    if (settingsSaveStatus) settingsSaveStatus.textContent = 'Fehler';
+  }
+}
+if (settingsSave) settingsSave.addEventListener('click', saveSettings);
+
+loadSettings();
 
 initNavigation();
 
