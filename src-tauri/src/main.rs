@@ -506,30 +506,13 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 eprintln!("[hotkey] F9 gedrückt - erstelle POI + Screenshot");
                 ws_broadcast(serde_json::json!(["poi-creating", null]).to_string());
 
-                // 1. Ctrl+C an SCUM senden für Koordinaten
-                if send_ctrl_c_to_scum().is_err() {
-                    eprintln!("[hotkey] Ctrl+C fehlgeschlagen");
-                    processing.store(false, std::sync::atomic::Ordering::SeqCst);
-                    thread::sleep(Duration::from_millis(500));
-                    continue;
-                }
-                thread::sleep(Duration::from_millis(300));
-
-                // 2. Zwischenablage auslesen
-                let text = match clipboard.get_text() {
-                    Ok(t) => t,
+                // 1. Ctrl+C an SCUM senden und Koordinaten robust aus der Zwischenablage lesen
+                let record = match capture_scum_coord(&mut clipboard, 300) {
+                    Ok(r) => r,
                     Err(e) => {
-                        eprintln!("[hotkey] Zwischenablage-Fehler: {}", e);
+                        eprintln!("[hotkey] Positionsabfrage fehlgeschlagen: {}", e);
                         processing.store(false, std::sync::atomic::Ordering::SeqCst);
-                        continue;
-                    }
-                };
-
-                let record = match parse_clipboard(&text) {
-                    Some(r) => r,
-                    None => {
-                        eprintln!("[hotkey] Keine gültigen Koordinaten in Zwischenablage");
-                        processing.store(false, std::sync::atomic::Ordering::SeqCst);
+                        thread::sleep(Duration::from_millis(500));
                         continue;
                     }
                 };
@@ -1000,6 +983,37 @@ fn send_ctrl_c_to_scum() -> Result<(), String> {
     Err("Nicht unterstützt auf dieser Plattform".to_string())
 }
 
+/// Sendet Strg+C an SCUM und liest die kopierten Koordinaten aus der
+/// Zwischenablage aus. Um zuverlässig zu erkennen, ob der Kopiervorgang durch
+/// Lag im Spiel tatsächlich stattgefunden hat (statt versehentlich einen
+/// veralteten/alten Zwischenablage-Inhalt als aktuelle Position zu
+/// übernehmen), wird die Zwischenablage vor dem Senden geleert. Nur wenn
+/// danach wirklich neuer, gültiger Text ankommt, gilt der Vorgang als
+/// erfolgreich. Der vorherige Inhalt der Zwischenablage wird anschließend
+/// wiederhergestellt, damit z.B. eine vom Nutzer zuvor kopierte Chat-Nachricht
+/// nicht verloren geht.
+fn capture_scum_coord(clipboard: &mut Clipboard, wait_ms: u64) -> Result<CoordRecord, String> {
+    let previous = clipboard.get_text().ok();
+    let _ = clipboard.clear();
+
+    let result = (|| {
+        send_ctrl_c_to_scum()?;
+        thread::sleep(Duration::from_millis(wait_ms));
+        let text = clipboard.get_text().map_err(|_| {
+            "Zwischenablage blieb leer (Strg+C wurde vom Spiel vermutlich nicht verarbeitet, z.B. durch Lag)".to_string()
+        })?;
+        parse_clipboard(&text).ok_or_else(|| "Keine gültigen Koordinaten in der Zwischenablage".to_string())
+    })();
+
+    if let Some(prev) = previous {
+        let _ = clipboard.set_text(prev);
+    } else {
+        let _ = clipboard.clear();
+    }
+
+    result
+}
+
 #[cfg(windows)]
 fn send_esc_to_scum() -> Result<(), String> {
     let hwnd = find_scum_window().ok_or("SCUM-Fenster nicht gefunden".to_string())?;
@@ -1153,14 +1167,9 @@ fn capture_scum_window() -> Option<image::RgbaImage> { None }
 
 #[tauri::command]
 fn get_current_location(state: State<Arc<AppState>>) -> Result<CoordRecord, String> {
-    if send_ctrl_c_to_scum().is_ok() {
-        std::thread::sleep(Duration::from_millis(300));
-        if let Ok(mut clipboard) = Clipboard::new() {
-            if let Ok(text) = clipboard.get_text() {
-                if let Some(record) = parse_clipboard(&text) {
-                    return Ok(record);
-                }
-            }
+    if let Ok(mut clipboard) = Clipboard::new() {
+        if let Ok(record) = capture_scum_coord(&mut clipboard, 300) {
+            return Ok(record);
         }
     }
     state
@@ -1191,21 +1200,20 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                     thread::sleep(Duration::from_secs(interval));
                     continue;
                 }
-                if let Err(err) = send_ctrl_c_to_scum() {
-                    if last_tracking_error.as_deref() != Some(err.as_str()) {
-                        eprintln!("[recorder] Positionsabfrage fehlgeschlagen: {}", err);
-                        let _ = app_handle.emit("tracking-error", err.clone());
-                        ws_broadcast(serde_json::json!(["tracking-error", err]).to_string());
-                        last_tracking_error = Some(err);
+                match capture_scum_coord(&mut clipboard, 500) {
+                    Err(err) => {
+                        if last_tracking_error.as_deref() != Some(err.as_str()) {
+                            eprintln!("[recorder] Positionsabfrage fehlgeschlagen: {}", err);
+                            let _ = app_handle.emit("tracking-error", err.clone());
+                            ws_broadcast(serde_json::json!(["tracking-error", err]).to_string());
+                            last_tracking_error = Some(err);
+                        }
+                        let interval = state.data.lock().unwrap().tracking_interval;
+                        thread::sleep(Duration::from_secs(interval));
+                        continue;
                     }
-                    let interval = state.data.lock().unwrap().tracking_interval;
-                    thread::sleep(Duration::from_secs(interval));
-                    continue;
-                }
-                last_tracking_error = None;
-                thread::sleep(Duration::from_millis(500));
-                if let Ok(text) = clipboard.get_text() {
-                    if let Some(record) = parse_clipboard(&text) {
+                    Ok(record) => {
+                        last_tracking_error = None;
                         let should_emit = {
                             let mut pos = state.current_position.lock().unwrap();
                             let changed = pos.as_ref().map_or(true, |last| {
