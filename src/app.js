@@ -285,6 +285,12 @@ const mapMeasureBtn = document.getElementById('mapMeasureBtn');
 
 if (mapMeasureBtn) {
   mapMeasureBtn.addEventListener('click', () => {
+    if (navVisible) {
+      navVisible = false;
+      clearNavRoute();
+      if (navPanel) navPanel.classList.remove('visible');
+      updateNavButtonStates();
+    }
     measureMode = !measureMode;
     mapMeasureBtn.classList.toggle('active', measureMode);
     map.getContainer().style.cursor = measureMode ? 'crosshair' : '';
@@ -1182,9 +1188,8 @@ function buildColorPicker(container, colors, selected, onSelect, pickerInput) {
   }
 }
 
-// Context menu for adding POIs via right-click on map
-map.on('contextmenu', (e) => {
-  const game = latLngToGame(e.latlng.lat, e.latlng.lng);
+function openPoiDialogForPoint(latlng) {
+  const game = latLngToGame(latlng.lat, latlng.lng);
   pendingPoi = game;
   editingPoiId = null;
   poiDialogTitle.textContent = 'POI hinzufügen';
@@ -1195,6 +1200,23 @@ map.on('contextmenu', (e) => {
   showPendingCrosshair(game.x, game.y, true);
   poiDialog.classList.add('open', 'top-left');
   poiLabelInput.focus();
+}
+
+// Right-click on map: navigation/measure modes take precedence, otherwise add POI
+map.on('contextmenu', (e) => {
+  if (measureMode || isMeasuring) return;
+  if (navVisible) {
+    if (navMode === 'route') {
+      if (!navRouteStart) { setNavPoint(e.latlng, true); }
+      else if (!navTarget) { setNavPoint(e.latlng, false); }
+      else { clearNavRoute(); setNavPoint(e.latlng, true); }
+    } else {
+      const g = latLngToGame(e.latlng.lat, e.latlng.lng);
+      setNavTarget(g.x, g.y);
+    }
+    return;
+  }
+  openPoiDialogForPoint(e.latlng);
 });
 
 poiColorPicker.addEventListener('input', (e) => {
@@ -1864,14 +1886,11 @@ const navFollowBtn = document.getElementById('navFollowBtn');
 const navModeRoute = document.getElementById('navModeRoute');
 const navModeNav = document.getElementById('navModeNav');
 const navStartRow = document.getElementById('navStartRow');
-const navColorPicker = document.getElementById('navColorPicker');
-const navColorReset = document.getElementById('navColorReset');
 const DEFAULT_NAV_COLOR = '#00ffcc';
 let navRouteColor = DEFAULT_NAV_COLOR;
 
 function applyNavRouteColor(color) {
   navRouteColor = color.toLowerCase();
-  if (navColorPicker) navColorPicker.value = navRouteColor;
   if (navLayer) navLayer.setStyle({ color: navRouteColor });
 }
 
@@ -1884,28 +1903,6 @@ function applyNavRouteColor(color) {
   }
 })();
 
-if (navColorPicker) {
-  navColorPicker.addEventListener('input', async (e) => {
-    const color = e.target.value;
-    applyNavRouteColor(color);
-    try {
-      await window.__TAURI__.core.invoke('set_nav_route_color', { color: color.toLowerCase() });
-    } catch (err) {
-      console.error('[nav] set route color failed', err);
-    }
-  });
-}
-if (navColorReset) {
-  navColorReset.addEventListener('click', async () => {
-    applyNavRouteColor(DEFAULT_NAV_COLOR);
-    try {
-      await window.__TAURI__.core.invoke('set_nav_route_color', { color: DEFAULT_NAV_COLOR });
-    } catch (err) {
-      console.error('[nav] reset route color failed', err);
-    }
-  });
-}
-
 if (window.__TAURI__.event) {
   window.__TAURI__.event.listen('nav-route-color', (e) => {
     const color = (e.payload || DEFAULT_NAV_COLOR).toString();
@@ -1913,47 +1910,73 @@ if (window.__TAURI__.event) {
   });
 }
 
-document.getElementById('mapNavBtn').addEventListener('click', () => {
-  navMode = 'nav';
-  navModeNav.classList.add('active');
-  navModeRoute.classList.remove('active');
-  if (navStartRow) navStartRow.classList.add('hidden');
-  if (navCalcBtn) navCalcBtn.textContent = 'Route neu berechnen';
-  navVisible = !navVisible;
-  document.getElementById('mapNavBtn').classList.toggle('active', navVisible);
+function exitMeasureMode() {
+  if (!measureMode) return;
+  measureMode = false;
+  if (mapMeasureBtn) mapMeasureBtn.classList.remove('active');
+  map.getContainer().style.cursor = '';
+  clearMeasure();
+}
+
+function updateNavButtonStates() {
+  const navBtn = document.getElementById('mapNavBtn');
+  const routeBtn = document.getElementById('mapRouteBtn');
+  if (navBtn) navBtn.classList.toggle('active', navVisible && navMode === 'nav');
+  if (routeBtn) routeBtn.classList.toggle('active', navVisible && navMode === 'route');
+}
+
+function enterNavMode(mode) {
+  if (mode === navMode && navVisible) {
+    // Same mode again -> close
+    navVisible = false;
+    clearNavRoute();
+  } else {
+    // Switch mode or open
+    navMode = mode;
+    navVisible = true;
+    clearNavRoute();
+  }
+  if (navModeNav && navModeRoute) {
+    navModeNav.classList.toggle('active', navMode === 'nav');
+    navModeRoute.classList.toggle('active', navMode === 'route');
+  }
+  if (navStartRow) navStartRow.classList.toggle('hidden', navMode !== 'route');
+  if (navCalcBtn) navCalcBtn.textContent = navMode === 'route' ? 'Route berechnen' : 'Route neu berechnen';
   if (navPanel) navPanel.classList.toggle('visible', navVisible);
-  if (!navVisible) clearNavRoute();
+  updateNavButtonStates();
+}
+
+document.getElementById('mapNavBtn').addEventListener('click', () => {
+  exitMeasureMode();
+  enterNavMode('nav');
 });
 
 document.getElementById('mapRouteBtn').addEventListener('click', () => {
-  navMode = 'route';
-  navModeRoute.classList.add('active');
-  navModeNav.classList.remove('active');
-  if (navStartRow) navStartRow.classList.remove('hidden');
-  if (navCalcBtn) navCalcBtn.textContent = 'Route berechnen';
-  navVisible = !navVisible;
-  document.getElementById('mapRouteBtn').classList.toggle('active', navVisible);
-  if (navPanel) navPanel.classList.toggle('visible', navVisible);
-  if (!navVisible) clearNavRoute();
+  exitMeasureMode();
+  enterNavMode('route');
 });
 
 if (navModeRoute) {
   navModeRoute.addEventListener('click', () => {
+    exitMeasureMode();
     navMode = 'route';
-    navModeRoute.classList.add('active');
-    navModeNav.classList.remove('active');
+    if (navModeRoute) navModeRoute.classList.add('active');
+    if (navModeNav) navModeNav.classList.remove('active');
     if (navStartRow) navStartRow.classList.remove('hidden');
     if (navCalcBtn) navCalcBtn.textContent = 'Route berechnen';
+    updateNavButtonStates();
     clearNavRoute();
   });
 }
 if (navModeNav) {
   navModeNav.addEventListener('click', () => {
+    exitMeasureMode();
     navMode = 'nav';
-    navModeNav.classList.add('active');
-    navModeRoute.classList.remove('active');
+    if (navModeNav) navModeNav.classList.add('active');
+    if (navModeRoute) navModeRoute.classList.remove('active');
     if (navStartRow) navStartRow.classList.add('hidden');
     if (navCalcBtn) navCalcBtn.textContent = 'Route neu berechnen';
+    updateNavButtonStates();
     clearNavRoute();
   });
 }
@@ -1969,18 +1992,6 @@ if (navCalcBtn) {
 if (navClearBtn) {
   navClearBtn.addEventListener('click', clearNavRoute);
 }
-
-map.on('contextmenu', (e) => {
-  if (!navVisible) return;
-  if (navMode === 'route') {
-    if (!navRouteStart) { setNavPoint(e.latlng, true); }
-    else if (!navTarget) { setNavPoint(e.latlng, false); }
-    else { clearNavRoute(); setNavPoint(e.latlng, true); }
-  } else {
-    const g = latLngToGame(e.latlng.lat, e.latlng.lng);
-    setNavTarget(g.x, g.y);
-  }
-});
 
 function setNavPoint(latlng, isStart) {
   const g = latLngToGame(latlng.lat, latlng.lng);
@@ -2256,14 +2267,18 @@ function stopRecording() {
 }
 
 function validateHotkeys() {
-  const inputs = [settingsPoiHotkey, settingsBigmapHotkey, settingsRecenterHotkey].filter(Boolean);
+  const named = [
+    { input: settingsPoiHotkey, name: 'POI' },
+    { input: settingsBigmapHotkey, name: 'Bigmap' },
+    { input: settingsRecenterHotkey, name: 'Recenter' },
+  ].filter(({ input }) => input);
   const counts = {};
-  inputs.forEach((input) => {
+  named.forEach(({ input }) => {
     const v = (input.value || '').toUpperCase();
     if (v) counts[v] = (counts[v] || 0) + 1;
   });
-  let hasDuplicate = false;
-  inputs.forEach((input) => {
+  let duplicateValue = null;
+  named.forEach(({ input }) => {
     input.classList.remove('hotkey-duplicate', 'hotkey-other-duplicate');
     const v = (input.value || '').toUpperCase();
     if (v && counts[v] > 1) {
@@ -2272,12 +2287,15 @@ function validateHotkeys() {
       } else {
         input.classList.add('hotkey-duplicate');
       }
-      hasDuplicate = true;
+      duplicateValue = v;
     }
   });
+  const hasDuplicate = duplicateValue !== null;
   if (settingsSave) settingsSave.disabled = hasDuplicate;
   if (settingsSaveStatus) {
-    settingsSaveStatus.textContent = hasDuplicate ? 'Hotkeys müssen eindeutig sein' : '';
+    settingsSaveStatus.textContent = hasDuplicate
+      ? `Hotkey "${duplicateValue}" ist mehrfach vergeben`
+      : '';
   }
 }
 
@@ -2323,7 +2341,6 @@ async function loadSettings() {
     if (settingsAutoPoiUseSector) settingsAutoPoiUseSector.checked = s.auto_poi_use_sector_category;
     if (settingsAutoPoiCategory) settingsAutoPoiCategory.value = s.auto_poi_category || '';
     if (settingsAutoPoiPrefix) settingsAutoPoiPrefix.value = s.auto_poi_name_prefix;
-    if (navColorPicker) navColorPicker.value = s.nav_route_color;
     trackingInterval = s.tracking_interval || 10;
     updateMarkerTransition();
     validateHotkeys();
@@ -2354,7 +2371,6 @@ async function saveSettings() {
     const saved = await invoke('save_settings', { settings: payload });
     trackingInterval = saved.tracking_interval;
     updateMarkerTransition();
-    if (navColorPicker) navColorPicker.value = saved.nav_route_color;
     navRouteColor = saved.nav_route_color;
     if (navLayer) updateNavRoute();
     if (settingsSaveStatus) {
