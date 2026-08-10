@@ -344,12 +344,6 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
                                     *state.bigmap_modal_open.lock().unwrap() = open;
                                 }
                             }
-                        } else if text.contains("\"bigmap-center\"") {
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                                if let (Some(x), Some(y)) = (parsed.get("x").and_then(|v| v.as_f64()), parsed.get("y").and_then(|v| v.as_f64())) {
-                                    *state.bigmap_center.lock().unwrap() = Some(crate::CoordRecord { time: Utc::now(), x, y, z: 0.0, pitch: 0.0, yaw: 0.0, roll: 0.0 });
-                                }
-                            }
                         } else if text.contains("\"set-nav-target\"") {
                             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
                                 if let (Some(x), Some(y)) = (parsed.get("x").and_then(|v| v.as_f64()), parsed.get("y").and_then(|v| v.as_f64())) {

@@ -2210,7 +2210,6 @@ const settingsAutoOpenOverlay = document.getElementById('settingsAutoOpenOverlay
 const settingsAutoLockOverlay = document.getElementById('settingsAutoLockOverlay');
 const settingsPoiHotkey = document.getElementById('settingsPoiHotkey');
 const settingsBigmapHotkey = document.getElementById('settingsBigmapHotkey');
-const settingsRecenterHotkey = document.getElementById('settingsRecenterHotkey');
 const settingsNavRouteColor = document.getElementById('settingsNavRouteColor');
 const settingsAutoPoiColor = document.getElementById('settingsAutoPoiColor');
 const settingsAutoPoiUseSector = document.getElementById('settingsAutoPoiUseSector');
@@ -2270,7 +2269,6 @@ function validateHotkeys() {
   const named = [
     { input: settingsPoiHotkey, name: 'POI' },
     { input: settingsBigmapHotkey, name: 'Bigmap' },
-    { input: settingsRecenterHotkey, name: 'Recenter' },
   ].filter(({ input }) => input);
   const counts = {};
   named.forEach(({ input }) => {
@@ -2312,9 +2310,9 @@ window.addEventListener('keydown', (e) => {
   }
 }, true);
 
-['settingsRecordPoiHotkey', 'settingsRecordBigmapHotkey', 'settingsRecordRecenterHotkey'].forEach((btnId, idx) => {
+['settingsRecordPoiHotkey', 'settingsRecordBigmapHotkey'].forEach((btnId, idx) => {
   const btn = document.getElementById(btnId);
-  const input = [settingsPoiHotkey, settingsBigmapHotkey, settingsRecenterHotkey][idx];
+  const input = [settingsPoiHotkey, settingsBigmapHotkey][idx];
   if (btn && input) {
     btn.addEventListener('click', () => startRecording(input));
   }
@@ -2335,7 +2333,6 @@ async function loadSettings() {
     if (settingsAutoLockOverlay) settingsAutoLockOverlay.checked = s.auto_lock_overlay;
     if (settingsPoiHotkey) settingsPoiHotkey.value = s.poi_hotkey;
     if (settingsBigmapHotkey) settingsBigmapHotkey.value = s.bigmap_hotkey;
-    if (settingsRecenterHotkey) settingsRecenterHotkey.value = s.bigmap_recenter_hotkey;
     if (settingsNavRouteColor) settingsNavRouteColor.value = s.nav_route_color;
     if (settingsAutoPoiColor) settingsAutoPoiColor.value = s.auto_poi_color;
     if (settingsAutoPoiUseSector) settingsAutoPoiUseSector.checked = s.auto_poi_use_sector_category;
@@ -2361,7 +2358,6 @@ async function saveSettings() {
       auto_lock_overlay: settingsAutoLockOverlay?.checked || false,
       poi_hotkey: settingsPoiHotkey?.value || 'F9',
       bigmap_hotkey: settingsBigmapHotkey?.value || 'AltGr+M',
-      bigmap_recenter_hotkey: settingsRecenterHotkey?.value || 'AltGr+N',
       nav_route_color: settingsNavRouteColor?.value || '#00ffcc',
       auto_poi_color: settingsAutoPoiColor?.value || '#ff8800',
       auto_poi_use_sector_category: settingsAutoPoiUseSector?.checked ?? true,

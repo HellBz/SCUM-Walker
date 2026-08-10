@@ -160,8 +160,6 @@ struct AppData {
     poi_hotkey: String,
     #[serde(default = "default_bigmap_hotkey")]
     bigmap_hotkey: String,
-    #[serde(default = "default_bigmap_recenter_hotkey")]
-    bigmap_recenter_hotkey: String,
     #[serde(default = "default_nav_route_color")]
     nav_route_color: String,
     #[serde(default = "default_auto_poi_color")]
@@ -190,10 +188,6 @@ fn default_bigmap_hotkey() -> String {
     "AltGr+M".to_string()
 }
 
-fn default_bigmap_recenter_hotkey() -> String {
-    "AltGr+N".to_string()
-}
-
 fn default_nav_route_color() -> String {
     "#00ffcc".to_string()
 }
@@ -216,7 +210,6 @@ pub(crate) struct AppState {
     big_map_active: Mutex<bool>,
     bigmap_modal_open: Mutex<bool>,
     app_handle: Mutex<Option<tauri::AppHandle>>,
-    bigmap_center: Mutex<Option<CoordRecord>>,
     nav_target: Mutex<Option<CoordRecord>>,
     pub(crate) nav_target_path: PathBuf,
     nav_route_color: Mutex<String>,
@@ -914,35 +907,6 @@ fn start_bigmap_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandl
 }
 
 #[cfg(windows)]
-fn start_nav_hotkey_watcher(state: Arc<AppState>, _app_handle: tauri::AppHandle) {
-    thread::spawn(move || {
-        let mut combo_down = false;
-        loop {
-            let scum_fg = is_scum_foreground();
-            let bigmap_fg = is_bigmap_foreground(&_app_handle);
-            let recenter_hotkey = parse_hotkey(&state.data.lock().unwrap().bigmap_recenter_hotkey).unwrap_or_default();
-            let combo_pressed = (scum_fg || bigmap_fg) && is_hotkey_pressed(&recenter_hotkey);
-
-            if combo_pressed && !combo_down {
-                combo_down = true;
-                if let Some(center) = state.bigmap_center.lock().unwrap().clone() {
-                    *state.nav_target.lock().unwrap() = Some(center.clone());
-                    save_nav_target(&state.nav_target_path, &Some(center.clone()));
-                    let payload = serde_json::json!({"x": center.x, "y": center.y});
-                    let _ = _app_handle.emit("nav-target", payload.clone());
-                    crate::http_server::ws_broadcast(serde_json::json!(["nav-target", payload]).to_string());
-                    eprintln!("[nav] Ziel gesetzt: x={} y={}", center.x, center.y);
-                }
-            } else if !combo_pressed {
-                combo_down = false;
-            }
-
-            thread::sleep(Duration::from_millis(50));
-        }
-    });
-}
-
-#[cfg(windows)]
 fn is_process_handle_elevated(hproc: windows::Win32::Foundation::HANDLE) -> Option<bool> {
     let mut token = windows::Win32::Foundation::HANDLE::default();
     unsafe { OpenProcessToken(hproc, TOKEN_QUERY, &mut token).ok()? };
@@ -1412,7 +1376,6 @@ struct AppSettings {
     auto_lock_overlay: bool,
     poi_hotkey: String,
     bigmap_hotkey: String,
-    bigmap_recenter_hotkey: String,
     nav_route_color: String,
     auto_poi_color: String,
     auto_poi_use_sector_category: bool,
@@ -1428,7 +1391,6 @@ fn settings_from_data(data: &AppData) -> AppSettings {
         auto_lock_overlay: data.auto_lock_overlay,
         poi_hotkey: data.poi_hotkey.clone(),
         bigmap_hotkey: data.bigmap_hotkey.clone(),
-        bigmap_recenter_hotkey: data.bigmap_recenter_hotkey.clone(),
         nav_route_color: data.nav_route_color.clone(),
         auto_poi_color: data.auto_poi_color.clone(),
         auto_poi_use_sector_category: data.auto_poi_use_sector_category,
@@ -1447,7 +1409,6 @@ fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<A
     let hotkeys = [
         ("POI-Hotkey", &settings.poi_hotkey),
         ("Bigmap-Hotkey", &settings.bigmap_hotkey),
-        ("Recenter-Hotkey", &settings.bigmap_recenter_hotkey),
     ];
     for (name, combo) in hotkeys {
         if parse_hotkey(combo.trim()).is_none() {
@@ -1462,7 +1423,6 @@ fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<A
     data.auto_lock_overlay = settings.auto_lock_overlay;
     data.poi_hotkey = settings.poi_hotkey.trim().to_string();
     data.bigmap_hotkey = settings.bigmap_hotkey.trim().to_string();
-    data.bigmap_recenter_hotkey = settings.bigmap_recenter_hotkey.trim().to_string();
     data.nav_route_color = validate_hex_color(&settings.nav_route_color).unwrap_or_else(default_nav_route_color);
     data.auto_poi_color = validate_hex_color(&settings.auto_poi_color).unwrap_or_else(default_auto_poi_color);
     data.auto_poi_use_sector_category = settings.auto_poi_use_sector_category;
@@ -2408,7 +2368,6 @@ fn main() {
                 big_map_active: Mutex::new(false),
                 bigmap_modal_open: Mutex::new(false),
                 app_handle: Mutex::new(None),
-                bigmap_center: Mutex::new(None),
                 nav_target: Mutex::new(saved_nav_target),
                 nav_target_path,
                 nav_route_color: Mutex::new(nav_route_color),
@@ -2425,8 +2384,6 @@ fn main() {
             start_hotkey_watcher(state.clone(), app.handle().clone());
             #[cfg(windows)]
             start_bigmap_hotkey_watcher(state.clone(), app.handle().clone());
-            #[cfg(windows)]
-            start_nav_hotkey_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
             let tiles_dir = get_tiles_dir(&app.handle());
             if let Err(e) = std::fs::create_dir_all(&tiles_dir) {
