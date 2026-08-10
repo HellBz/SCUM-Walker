@@ -1223,6 +1223,12 @@ button:hover { background: #3a3a3a; }
 }
 
 .settings-section { margin-bottom: 20px; }
+.settings-section p.settings-hint {
+  font-size: 11px;
+  color: #888;
+  margin: -6px 0 10px;
+  line-height: 1.4;
+}
 .settings-section h4 {
   margin: 0 0 10px;
   font-size: 12px;
