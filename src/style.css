@@ -1179,24 +1179,25 @@ button:hover { background: #3a3a3a; }
   top: 10px;
   right: 10px;
   z-index: 500;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   background: #1a1a1a;
   border: 1px solid #444;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #aaa;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+.settings-toggle svg { width: 24px; height: 24px; }
 .settings-toggle:hover { color: #00ffcc; border-color: #00ffcc; }
 
 .settings-panel {
   position: absolute;
   top: 0;
-  right: -360px;
-  width: 360px;
+  right: -420px;
+  width: 420px;
   height: 100%;
   background: #1a1a1a;
   border-left: 1px solid #333;
