@@ -2204,6 +2204,7 @@ const settingsSave = document.getElementById('settingsSave');
 const settingsSaveStatus = document.getElementById('settingsSaveStatus');
 
 let recordingTarget = null;
+let lastChangedHotkeyId = null;
 
 function formatHotkey(e) {
   const parts = [];
@@ -2236,6 +2237,32 @@ function stopRecording() {
   recordingTarget = null;
 }
 
+function validateHotkeys() {
+  const inputs = [settingsPoiHotkey, settingsBigmapHotkey, settingsRecenterHotkey].filter(Boolean);
+  const counts = {};
+  inputs.forEach((input) => {
+    const v = (input.value || '').toUpperCase();
+    if (v) counts[v] = (counts[v] || 0) + 1;
+  });
+  let hasDuplicate = false;
+  inputs.forEach((input) => {
+    input.classList.remove('hotkey-duplicate', 'hotkey-other-duplicate');
+    const v = (input.value || '').toUpperCase();
+    if (v && counts[v] > 1) {
+      if (lastChangedHotkeyId && input.id !== lastChangedHotkeyId) {
+        input.classList.add('hotkey-other-duplicate');
+      } else {
+        input.classList.add('hotkey-duplicate');
+      }
+      hasDuplicate = true;
+    }
+  });
+  if (settingsSave) settingsSave.disabled = hasDuplicate;
+  if (settingsSaveStatus) {
+    settingsSaveStatus.textContent = hasDuplicate ? 'Hotkeys müssen eindeutig sein' : '';
+  }
+}
+
 window.addEventListener('keydown', (e) => {
   if (!recordingTarget) return;
   e.preventDefault();
@@ -2243,7 +2270,9 @@ window.addEventListener('keydown', (e) => {
   const combo = formatHotkey(e);
   if (combo) {
     recordingTarget.value = combo;
+    lastChangedHotkeyId = recordingTarget.id;
     stopRecording();
+    validateHotkeys();
   }
 }, true);
 
@@ -2273,6 +2302,7 @@ async function loadSettings() {
     if (settingsRecenterHotkey) settingsRecenterHotkey.value = s.bigmap_recenter_hotkey;
     trackingInterval = s.tracking_interval || 10;
     updateMarkerTransition();
+    validateHotkeys();
   } catch (err) {
     console.error('[settings] load failed', err);
   }

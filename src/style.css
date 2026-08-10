@@ -1277,6 +1277,14 @@ button:hover { background: #3a3a3a; }
   color: #ff8800;
   animation: pulse-border 1s infinite;
 }
+.hotkey-input-row input.hotkey-duplicate {
+  border-color: #e45858 !important;
+  color: #e45858;
+}
+.hotkey-input-row input.hotkey-other-duplicate {
+  border-color: #ffaa00 !important;
+  color: #ffaa00;
+}
 @keyframes pulse-border {
   0%, 100% { border-color: #ff8800; }
   50% { border-color: #444; }
