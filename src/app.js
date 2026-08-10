@@ -2211,6 +2211,21 @@ const settingsSaveStatus = document.getElementById('settingsSaveStatus');
 let recordingTarget = null;
 let lastChangedHotkeyId = null;
 
+function keyFromEvent(e) {
+  // For letter/digit keys the physical code is more reliable than e.key,
+  // especially for AltGr combinations on German keyboards (e.g. AltGr+M -> µ).
+  if (e.code && e.code.startsWith('Key')) return e.code.slice(3).toUpperCase();
+  if (e.code && e.code.startsWith('Digit')) return e.code.slice(5);
+  const fMatch = e.code && e.code.match(/^F(1[0-9]?|2[0-4]?|[1-9])$/);
+  if (fMatch) return e.code;
+
+  const ignore = ['Control', 'Alt', 'Shift', 'AltGraph', 'Meta', 'OS'];
+  let key = e.key;
+  if (!key || ignore.includes(key)) return null;
+  if (key.length === 1) key = key.toUpperCase();
+  return key;
+}
+
 function formatHotkey(e) {
   const parts = [];
   const isAltGr = e.getModifierState && e.getModifierState('AltGraph');
@@ -2222,10 +2237,8 @@ function formatHotkey(e) {
   }
   if (e.shiftKey) parts.push('Shift');
 
-  const ignore = ['Control', 'Alt', 'Shift', 'AltGraph', 'Meta', 'OS'];
-  let key = e.key;
-  if (!key || ignore.includes(key)) return null;
-  if (key.length === 1) key = key.toUpperCase();
+  const key = keyFromEvent(e);
+  if (!key) return null;
   parts.push(key);
   return parts.join('+');
 }
@@ -2350,7 +2363,8 @@ async function saveSettings() {
     }
   } catch (err) {
     console.error('[settings] save failed', err);
-    if (settingsSaveStatus) settingsSaveStatus.textContent = 'Fehler';
+    const msg = err?.message || err?.toString?.() || 'Fehler';
+    if (settingsSaveStatus) settingsSaveStatus.textContent = msg;
   }
 }
 if (settingsSave) settingsSave.addEventListener('click', saveSettings);
