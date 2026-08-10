@@ -35,12 +35,14 @@ use windows::Win32::System::Threading::{
     QueryFullProcessImageNameW,
 };
 #[cfg(windows)]
+#[cfg(windows)]
 use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_CONTROL, VK_C,
 };
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, GetClientRect, GetForegroundWindow,
     GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetForegroundWindow,
@@ -1406,13 +1408,16 @@ fn get_settings(state: State<Arc<AppState>>) -> AppSettings {
 
 #[tauri::command]
 fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<AppSettings, String> {
-    let hotkeys = [
-        ("POI-Hotkey", &settings.poi_hotkey),
-        ("Bigmap-Hotkey", &settings.bigmap_hotkey),
-    ];
-    for (name, combo) in hotkeys {
-        if parse_hotkey(combo.trim()).is_none() {
-            return Err(format!("{} ist ungültig: '{}'", name, combo));
+    #[cfg(windows)]
+    {
+        let hotkeys = [
+            ("POI-Hotkey", &settings.poi_hotkey),
+            ("Bigmap-Hotkey", &settings.bigmap_hotkey),
+        ];
+        for (name, combo) in hotkeys {
+            if parse_hotkey(combo.trim()).is_none() {
+                return Err(format!("{} ist ungültig: '{}'", name, combo));
+            }
         }
     }
 
