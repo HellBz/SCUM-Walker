@@ -162,6 +162,16 @@ struct AppData {
     bigmap_hotkey: String,
     #[serde(default = "default_bigmap_recenter_hotkey")]
     bigmap_recenter_hotkey: String,
+    #[serde(default = "default_nav_route_color")]
+    nav_route_color: String,
+    #[serde(default = "default_auto_poi_color")]
+    auto_poi_color: String,
+    #[serde(default)]
+    auto_poi_use_sector_category: bool,
+    #[serde(default)]
+    auto_poi_category: String,
+    #[serde(default = "default_auto_poi_name_prefix")]
+    auto_poi_name_prefix: String,
 }
 
 fn default_interval() -> u64 {
@@ -182,6 +192,18 @@ fn default_bigmap_hotkey() -> String {
 
 fn default_bigmap_recenter_hotkey() -> String {
     "AltGr+N".to_string()
+}
+
+fn default_nav_route_color() -> String {
+    "#00ffcc".to_string()
+}
+
+fn default_auto_poi_color() -> String {
+    "#ff8800".to_string()
+}
+
+fn default_auto_poi_name_prefix() -> String {
+    "POI".to_string()
 }
 
 pub(crate) struct AppState {
@@ -599,17 +621,31 @@ fn start_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
                 };
 
                 // 3. POI erstellen
+                let data = state.data.lock().unwrap();
+                let settings = data.clone();
+                drop(data);
+
+                let prefix = if settings.auto_poi_name_prefix.is_empty() {
+                    "POI".to_string()
+                } else {
+                    settings.auto_poi_name_prefix.clone()
+                };
                 let poi_id = format!("{}", Utc::now().timestamp_millis());
-                let poi_label = format!("POI {}", poi_id);
+                let poi_label = format!("{} {}", prefix, poi_id);
+                let category = if settings.auto_poi_use_sector_category || settings.auto_poi_category.is_empty() {
+                    compute_sector(record.x, record.y)
+                } else {
+                    settings.auto_poi_category.clone()
+                };
                 let poi = Poi {
                     id: poi_id.clone(),
                     label: poi_label.clone(),
                     x: record.x,
                     y: record.y,
                     poi_type: "auto".to_string(),
-                    color: "#ff8800".to_string(),
+                    color: settings.auto_poi_color.clone(),
                     image_path: None,
-                    category: compute_sector(record.x, record.y),
+                    category,
                 };
 
                 // 4. Screenshot in separatem Thread (blockiert nicht HTTP-Server)
@@ -1374,6 +1410,11 @@ struct AppSettings {
     poi_hotkey: String,
     bigmap_hotkey: String,
     bigmap_recenter_hotkey: String,
+    nav_route_color: String,
+    auto_poi_color: String,
+    auto_poi_use_sector_category: bool,
+    auto_poi_category: String,
+    auto_poi_name_prefix: String,
 }
 
 fn settings_from_data(data: &AppData) -> AppSettings {
@@ -1385,6 +1426,11 @@ fn settings_from_data(data: &AppData) -> AppSettings {
         poi_hotkey: data.poi_hotkey.clone(),
         bigmap_hotkey: data.bigmap_hotkey.clone(),
         bigmap_recenter_hotkey: data.bigmap_recenter_hotkey.clone(),
+        nav_route_color: data.nav_route_color.clone(),
+        auto_poi_color: data.auto_poi_color.clone(),
+        auto_poi_use_sector_category: data.auto_poi_use_sector_category,
+        auto_poi_category: data.auto_poi_category.clone(),
+        auto_poi_name_prefix: data.auto_poi_name_prefix.clone(),
     }
 }
 
@@ -1403,8 +1449,26 @@ fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> AppSetti
     data.poi_hotkey = settings.poi_hotkey.trim().to_string();
     data.bigmap_hotkey = settings.bigmap_hotkey.trim().to_string();
     data.bigmap_recenter_hotkey = settings.bigmap_recenter_hotkey.trim().to_string();
+    data.nav_route_color = validate_hex_color(&settings.nav_route_color).unwrap_or_else(default_nav_route_color);
+    data.auto_poi_color = validate_hex_color(&settings.auto_poi_color).unwrap_or_else(default_auto_poi_color);
+    data.auto_poi_use_sector_category = settings.auto_poi_use_sector_category;
+    data.auto_poi_category = settings.auto_poi_category.trim().to_string();
+    data.auto_poi_name_prefix = settings.auto_poi_name_prefix.trim().to_string();
     save_data(&state.data_path, &data);
+
+    // Keep the runtime nav route color state in sync so overlays pick it up immediately.
+    apply_nav_route_color(&state, &data.nav_route_color);
+
     settings_from_data(&data)
+}
+
+fn validate_hex_color(color: &str) -> Option<String> {
+    let color = color.trim().to_lowercase();
+    if color.starts_with('#') && color.len() == 7 && color.chars().skip(1).all(|c| c.is_ascii_hexdigit()) {
+        Some(color)
+    } else {
+        None
+    }
 }
 
 fn escape_csv(value: &str) -> String {
@@ -2312,9 +2376,14 @@ fn main() {
                 .unwrap_or_else(|_| PathBuf::from("."))
                 .join("nav_route_color.json");
 
-            let data = load_data(&data_path);
+            let mut data = load_data(&data_path);
             let saved_nav_target = load_nav_target(&nav_target_path);
-            let nav_route_color = load_nav_route_color(&nav_route_color_path);
+            let file_nav_route_color = load_nav_route_color(&nav_route_color_path);
+            if file_nav_route_color != default_nav_route_color() {
+                data.nav_route_color = file_nav_route_color;
+                save_data(&data_path, &data);
+            }
+            let nav_route_color = data.nav_route_color.clone();
             let state = Arc::new(AppState {
                 data: Mutex::new(data.clone()),
                 data_path,

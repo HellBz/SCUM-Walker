@@ -2200,6 +2200,11 @@ const settingsAutoLockOverlay = document.getElementById('settingsAutoLockOverlay
 const settingsPoiHotkey = document.getElementById('settingsPoiHotkey');
 const settingsBigmapHotkey = document.getElementById('settingsBigmapHotkey');
 const settingsRecenterHotkey = document.getElementById('settingsRecenterHotkey');
+const settingsNavRouteColor = document.getElementById('settingsNavRouteColor');
+const settingsAutoPoiColor = document.getElementById('settingsAutoPoiColor');
+const settingsAutoPoiUseSector = document.getElementById('settingsAutoPoiUseSector');
+const settingsAutoPoiCategory = document.getElementById('settingsAutoPoiCategory');
+const settingsAutoPoiPrefix = document.getElementById('settingsAutoPoiPrefix');
 const settingsSave = document.getElementById('settingsSave');
 const settingsSaveStatus = document.getElementById('settingsSaveStatus');
 
@@ -2300,6 +2305,12 @@ async function loadSettings() {
     if (settingsPoiHotkey) settingsPoiHotkey.value = s.poi_hotkey;
     if (settingsBigmapHotkey) settingsBigmapHotkey.value = s.bigmap_hotkey;
     if (settingsRecenterHotkey) settingsRecenterHotkey.value = s.bigmap_recenter_hotkey;
+    if (settingsNavRouteColor) settingsNavRouteColor.value = s.nav_route_color;
+    if (settingsAutoPoiColor) settingsAutoPoiColor.value = s.auto_poi_color;
+    if (settingsAutoPoiUseSector) settingsAutoPoiUseSector.checked = s.auto_poi_use_sector_category;
+    if (settingsAutoPoiCategory) settingsAutoPoiCategory.value = s.auto_poi_category || '';
+    if (settingsAutoPoiPrefix) settingsAutoPoiPrefix.value = s.auto_poi_name_prefix;
+    if (navColorPicker) navColorPicker.value = s.nav_route_color;
     trackingInterval = s.tracking_interval || 10;
     updateMarkerTransition();
     validateHotkeys();
@@ -2321,10 +2332,18 @@ async function saveSettings() {
       poi_hotkey: settingsPoiHotkey?.value || 'F9',
       bigmap_hotkey: settingsBigmapHotkey?.value || 'AltGr+M',
       bigmap_recenter_hotkey: settingsRecenterHotkey?.value || 'AltGr+N',
+      nav_route_color: settingsNavRouteColor?.value || '#00ffcc',
+      auto_poi_color: settingsAutoPoiColor?.value || '#ff8800',
+      auto_poi_use_sector_category: settingsAutoPoiUseSector?.checked ?? true,
+      auto_poi_category: settingsAutoPoiCategory?.value || '',
+      auto_poi_name_prefix: settingsAutoPoiPrefix?.value || 'POI',
     };
-    await invoke('save_settings', { settings: payload });
-    trackingInterval = payload.tracking_interval;
+    const saved = await invoke('save_settings', { settings: payload });
+    trackingInterval = saved.tracking_interval;
     updateMarkerTransition();
+    if (navColorPicker) navColorPicker.value = saved.nav_route_color;
+    navRouteColor = saved.nav_route_color;
+    if (navLayer) updateNavRoute();
     if (settingsSaveStatus) {
       settingsSaveStatus.textContent = 'Gespeichert';
       setTimeout(() => { settingsSaveStatus.textContent = ''; }, 2000);
