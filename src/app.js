@@ -1012,7 +1012,7 @@ function renderPoiList() {
                          <button class="poi-edit" data-id="${poi.id}" title="POI bearbeiten"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Bearbeiten</button>
                          <button class="poi-image-btn" data-id="${poi.id}" title="${hasImage ? 'Bild anzeigen' : 'Screenshot aus SCUM'}">${hasImage ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>'} ${hasImage ? 'Bild' : 'Screenshot'}</button>
                          <button class="poi-upload-btn" data-id="${poi.id}" title="Bild hochladen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload</button>
-                         <button class="poi-copy" data-id="${poi.id}" title="POI in Zwischenablage kopieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Kopieren</button>
+                         <button class="poi-copy" data-id="${poi.id}" title="POI in Zwischenablage kopieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="10" height="10" rx="1.5" ry="1.5"/><path d="M7 17V7c0-1.1.9-2 2-2h7"/></svg> Kopieren</button>
                          <button class="poi-delete" data-id="${poi.id}" title="POI löschen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Löschen</button>
                        </div>
                      </span>`;
@@ -1024,8 +1024,20 @@ function renderPoiList() {
       e.stopPropagation();
       const dropdown = el.nextElementSibling;
       const isOpen = dropdown.classList.contains('open');
-      poiListEl.querySelectorAll('.poi-dropdown.open').forEach(d => d.classList.remove('open'));
-      if (!isOpen) dropdown.classList.add('open');
+      poiListEl.querySelectorAll('.poi-dropdown.open').forEach(d => {
+        d.classList.remove('open', 'open-up');
+      });
+      if (!isOpen) {
+        const container = poiListEl;
+        const containerRect = container.getBoundingClientRect();
+        const btnRect = el.getBoundingClientRect();
+        // Approximate dropdown height; open upward when near the bottom edge
+        const approxDropdownHeight = 140;
+        if (btnRect.bottom + approxDropdownHeight > containerRect.bottom) {
+          dropdown.classList.add('open-up');
+        }
+        dropdown.classList.add('open');
+      }
     });
   });
 

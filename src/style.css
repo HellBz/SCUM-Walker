@@ -986,6 +986,10 @@ button:hover { background: #3a3a3a; }
 .poi-dropdown.open {
   display: flex;
 }
+.poi-dropdown.open-up {
+  top: auto;
+  bottom: 100%;
+}
 .poi-dropdown button {
   background: transparent;
   border: none;
