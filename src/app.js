@@ -1503,14 +1503,22 @@ document.getElementById('resetOverlayPosition').addEventListener('click', async 
 
 let overlayLocked = false;
 const lockOverlayBtn = document.getElementById('lockOverlay');
+
+function updateOverlayLockUI() {
+  if (!lockOverlayBtn) return;
+  lockOverlayBtn.innerHTML = overlayLocked
+    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
+  lockOverlayBtn.title = overlayLocked ? 'Overlay entsperren' : 'Overlay sperren / Klick-durch';
+  lockOverlayBtn.classList.toggle('locked', overlayLocked);
+  lockOverlayBtn.classList.toggle('unlocked', !overlayLocked);
+}
+
 lockOverlayBtn.addEventListener('click', async () => {
   try {
     overlayLocked = !overlayLocked;
     await invoke('set_overlay_clickthrough', { clickthrough: overlayLocked });
-    lockOverlayBtn.innerHTML = overlayLocked ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
-    lockOverlayBtn.title = overlayLocked ? 'Overlay entsperren' : 'Overlay sperren / Klick-durch';
-    lockOverlayBtn.classList.toggle('locked', overlayLocked);
-    lockOverlayBtn.classList.toggle('unlocked', !overlayLocked);
+    updateOverlayLockUI();
     statusEl.textContent = overlayLocked ? 'Overlay gesperrt (Klick-durch)' : 'Overlay entsperrt';
   } catch (err) {
     statusEl.textContent = 'Overlay-Lock: ' + err;
@@ -2343,6 +2351,10 @@ async function loadSettings() {
     if (settingsAutoStartTracking) settingsAutoStartTracking.checked = s.auto_start_live_tracking;
     if (settingsAutoOpenOverlay) settingsAutoOpenOverlay.checked = s.auto_open_overlay;
     if (settingsAutoLockOverlay) settingsAutoLockOverlay.checked = s.auto_lock_overlay;
+    if (s.auto_lock_overlay) {
+      overlayLocked = true;
+      updateOverlayLockUI();
+    }
     if (settingsPoiHotkey) settingsPoiHotkey.value = s.poi_hotkey;
     if (settingsBigmapHotkey) settingsBigmapHotkey.value = s.bigmap_hotkey;
     if (settingsNavRouteColor) settingsNavRouteColor.value = s.nav_route_color;

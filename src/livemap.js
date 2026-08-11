@@ -923,7 +923,8 @@
             popup.style.width = w + 'px';
             popup.style.height = h + 'px';
             popup.innerHTML = '<img src="' + imgUrl + '" style="width:' + w + 'px;height:' + h + 'px;border-radius:4px;display:block">';
-            marker.updatePopup();
+            const p = marker.getPopup();
+            if (p && typeof p.update === 'function') p.update();
           };
           img.src = imgUrl;
         });
