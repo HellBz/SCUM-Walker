@@ -519,6 +519,8 @@ const VK_RCONTROL: u16 = 0xA3;
 /// Liste von Virtual-Key-Codes um, die dann mit `is_key_pressed` geprüft werden
 /// können. Reihenfolge ist egal; Modifier und Haupttaste werden einzeln geprüft.
 /// Gibt `None` zurück, wenn ein unbekannter Teil im Hotkey enthalten ist.
+/// Auf Nicht-Windows-Plattformen ist das nur ein Stub, damit der Code überall
+/// kompiliert (die echten Hotkeys funktionieren nur unter Windows).
 #[cfg(windows)]
 fn parse_hotkey(combo: &str) -> Option<Vec<u16>> {
     let mut vks = Vec::new();
@@ -563,6 +565,11 @@ fn parse_hotkey(combo: &str) -> Option<Vec<u16>> {
         vks.push(vk);
     }
     if vks.is_empty() { None } else { Some(vks) }
+}
+
+#[cfg(not(windows))]
+fn parse_hotkey(_combo: &str) -> Option<Vec<u16>> {
+    Some(Vec::new())
 }
 
 #[cfg(windows)]
@@ -1408,16 +1415,13 @@ fn get_settings(state: State<Arc<AppState>>) -> AppSettings {
 
 #[tauri::command]
 fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<AppSettings, String> {
-    #[cfg(windows)]
-    {
-        let hotkeys = [
-            ("POI-Hotkey", &settings.poi_hotkey),
-            ("Bigmap-Hotkey", &settings.bigmap_hotkey),
-        ];
-        for (name, combo) in hotkeys {
-            if parse_hotkey(combo.trim()).is_none() {
-                return Err(format!("{} ist ungültig: '{}'", name, combo));
-            }
+    let hotkeys = [
+        ("POI-Hotkey", &settings.poi_hotkey),
+        ("Bigmap-Hotkey", &settings.bigmap_hotkey),
+    ];
+    for (name, combo) in hotkeys {
+        if parse_hotkey(combo.trim()).is_none() {
+            return Err(format!("{} ist ungültig: '{}'", name, combo));
         }
     }
 
