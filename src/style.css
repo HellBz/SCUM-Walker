@@ -945,6 +945,7 @@ button:hover { background: #3a3a3a; }
 .poi-edit,
 .poi-image-btn,
 .poi-upload-btn,
+.poi-copy,
 .poi-center-btn,
 .poi-connect-btn,
 .poi-more-btn,
@@ -1026,6 +1027,7 @@ button:hover { background: #3a3a3a; }
 .poi-edit:hover,
 .poi-image-btn:hover,
 .poi-upload-btn:hover,
+.poi-copy:hover,
 .poi-center-btn:hover,
 .poi-connect-btn:hover { border-color: #00ffcc; color: #00ffcc; }
 .poi-connect-btn.active { border-color: #00ffcc; color: #00ffcc; background: #1a3a33; }
