@@ -760,18 +760,39 @@ function renderPois() {
           marker.openPopup();
         }
       });
-      marker.on('click', async () => {
-        marker.closePopup();
-        try {
-          const base64 = await invoke('get_poi_image_base64', { id: poi.id });
-          imageDialogImg.src = 'data:image/png;base64,' + base64;
-          imageDialogTitle.textContent = 'Bild: ' + poi.label;
-          imageDialog.classList.add('open');
-        } catch (err) {
-          statusEl.textContent = 'Fehler beim Laden des Bildes: ' + err;
-        }
-      });
     }
+
+    marker.on('click', () => {
+      setNavTarget(poi.x, poi.y);
+    });
+
+    marker.on('contextmenu', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (e.originalEvent) e.originalEvent.preventDefault();
+      const id = poi.id;
+      if (connectedPoiIds.has(id)) {
+        connectedPoiIds.delete(id);
+      } else {
+        connectedPoiIds.add(id);
+      }
+      renderConnectionLine();
+      broadcastPoiConnection();
+      updateUI();
+    });
+
+    marker.on('mousedown', async (e) => {
+      if (!poi.image_path || !e.originalEvent || e.originalEvent.button !== 1) return;
+      e.originalEvent.preventDefault();
+      marker.closePopup();
+      try {
+        const base64 = await invoke('get_poi_image_base64', { id: poi.id });
+        imageDialogImg.src = 'data:image/png;base64,' + base64;
+        imageDialogTitle.textContent = 'Bild: ' + poi.label;
+        imageDialog.classList.add('open');
+      } catch (err) {
+        statusEl.textContent = 'Fehler beim Laden des Bildes: ' + err;
+      }
+    });
 
     poiClusterGroup.addLayer(marker);
   });
@@ -1955,9 +1976,8 @@ function updateNavButtonStates() {
 
 function enterNavMode(mode) {
   if (mode === navMode && navVisible) {
-    // Same mode again -> close
+    // Same mode again -> just hide the panel, keep the target/route
     navVisible = false;
-    clearNavRoute();
   } else {
     // Switch mode or open
     navMode = mode;
