@@ -1003,9 +1003,9 @@ function renderPoiList() {
     const hasImage = !!poi.image_path;
     const div = document.createElement('div');
     div.className = 'poi-item';
-    div.innerHTML = `<span class="poi-label-span"><span class="poi-color" style="background:${poi.color}"></span>${escapeHtml(poi.label)}</span>
+    div.innerHTML = `<span class="poi-label-span" data-id="${poi.id}" title="Auf POI zentrieren"><span class="poi-color" style="background:${poi.color}"></span>${escapeHtml(poi.label)}</span>
                      <span class="poi-actions">
-                       <button class="poi-center-btn" data-id="${poi.id}" title="Karte auf POI zentrieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
+                       <button class="poi-center-btn" data-id="${poi.id}" title="Als Navigationsziel setzen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>
                        <button class="poi-connect-btn ${connectedPoiIds.has(poi.id) ? 'active' : ''}" data-id="${poi.id}" title="${connectedPoiIds.has(poi.id) ? 'Verbindungslinie entfernen' : 'Verbindungslinie zu POI'}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><line x1="6.5" y1="6.5" x2="17.5" y2="17.5" stroke-dasharray="3,3"/></svg></button>
                        <button class="poi-more-btn" data-id="${poi.id}" title="Mehr Aktionen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
                        <div class="poi-dropdown" data-id="${poi.id}">
@@ -1049,12 +1049,20 @@ function renderPoiList() {
     d.addEventListener('click', (e) => e.stopPropagation());
   });
 
-  poiListEl.querySelectorAll('.poi-center-btn').forEach(el => {
+  poiListEl.querySelectorAll('.poi-label-span').forEach(el => {
     el.addEventListener('click', () => {
       const poi = data.pois.find(p => p.id === el.dataset.id);
       if (!poi) return;
       const ll = gameToLatLng(poi.x, poi.y);
       map.flyTo(ll, 6, { duration: 0.8 });
+    });
+  });
+
+  poiListEl.querySelectorAll('.poi-center-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const poi = data.pois.find(p => p.id === el.dataset.id);
+      if (!poi) return;
+      setNavTarget(poi.x, poi.y);
     });
   });
 

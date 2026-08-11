@@ -936,6 +936,14 @@ button:hover { background: #3a3a3a; }
   margin-right: 6px;
 }
 
+.poi-label-span {
+  cursor: pointer;
+  user-select: none;
+}
+.poi-label-span:hover {
+  color: #00ffcc;
+}
+
 .poi-actions {
   display: flex;
   gap: 4px;
