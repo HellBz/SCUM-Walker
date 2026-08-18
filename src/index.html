@@ -72,10 +72,6 @@
           <button id="addRouteBtn" title="Neue Route"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Neue Route</button>
         </div>
         <div id="routeList"></div>
-        <div class="export-row">
-          <button id="exportJson">JSON exportieren</button>
-          <button id="exportCsv">CSV exportieren</button>
-        </div>
       </div>
     </div>
 
@@ -89,7 +85,7 @@
       </div>
       <div class="poi-add-buttons">
         <button id="addPoiFromLocation" title="Aktuelle Position als POI"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg> Position</button>
-        <button id="addPoiFromClipboard" title="POI aus Zwischenablage importieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Clipboard</button>
+        <button id="addPoiFromClipboard" title="POI aus Zwischenablage importieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Import</button>
       </div>
       <p class="hint">Oder Rechtsklick auf die Karte.</p>
       <div id="poiList"></div>
@@ -203,6 +199,45 @@
             </select>
           </label>
         </div>
+        <div class="settings-section">
+          <h4>Backup</h4>
+          <p class="settings-hint">Routen, POIs und Einstellungen jeweils einzeln als Datei sichern oder aus einer Backup-Datei wiederherstellen.</p>
+          <div class="settings-row backup-row backup-row-full">
+            <span class="backup-label">App-Backup</span>
+            <div class="backup-buttons">
+              <button id="backupExportFull" type="button" title="Routen, POIs und Einstellungen zusammen exportieren">Exportieren</button>
+              <button id="backupImportFull" type="button" title="Komplett-Backup importieren (ersetzt Routen, POIs und Einstellungen)">Importieren</button>
+            </div>
+          </div>
+          <div class="settings-row backup-row">
+            <span class="backup-label">Routen</span>
+            <div class="backup-buttons">
+              <button id="backupExportRoutes" type="button" title="Routen exportieren">Exportieren</button>
+              <button id="backupImportRoutes" type="button" title="Routen importieren">Importieren</button>
+            </div>
+          </div>
+          <div class="settings-row backup-row-pois">
+            <div class="backup-line">
+              <span class="backup-label">POIs</span>
+              <select id="backupPoiCategorySelect" title="Kategorie für den Export wählen"><option value="">Alle Kategorien</option></select>
+            </div>
+            <div class="backup-line">
+              <span class="backup-label"></span>
+              <div class="backup-buttons">
+                <button id="backupExportPois" type="button" title="POIs (ggf. nur gewählte Kategorie) exportieren">Exportieren</button>
+                <button id="backupImportPois" type="button" title="POIs importieren">Importieren</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-row backup-row">
+            <span class="backup-label">Einstellungen</span>
+            <div class="backup-buttons">
+              <button id="backupExportSettings" type="button" title="Einstellungen exportieren">Exportieren</button>
+              <button id="backupImportSettings" type="button" title="Einstellungen importieren">Importieren</button>
+            </div>
+          </div>
+          <div id="backupStatus" style="color:#888; font-size:12px; margin-top:6px;"></div>
+        </div>
         <div class="settings-actions">
           <button id="settingsSave" class="primary">Speichern</button>
           <span id="settingsSaveStatus" style="color:#888; font-size:12px; margin-left:8px;"></span>
@@ -246,10 +281,11 @@
 
   <div id="clipboardDialog" class="dialog">
     <div class="dialog-content">
-      <h3>POI aus Zwischenablage</h3>
-      <p class="hint" style="margin-bottom:8px;">POI JSON oder SCUM-Koordinaten einfügen:</p>
-      <textarea id="clipboardInput" rows="4" placeholder='{"label":"Bunker","x":123456,"y":-789012,"color":"#ff44d3","category":"Bunker"}' style="width:100%;background:#1a1a1a;color:#ddd;border:1px solid #444;border-radius:4px;padding:8px;font-size:12px;font-family:monospace;resize:vertical;"></textarea>
+      <h3>POI Import</h3>
+      <p class="hint" style="margin-bottom:8px;">POI JSON, Marker-Array oder SCUM-Koordinaten einfügen:</p>
+      <textarea id="clipboardInput" rows="6" placeholder='{"label":"Bunker","x":123456,"y":-789012,"color":"#ff44d3","category":"Bunker"}' style="width:100%;background:#1a1a1a;color:#ddd;border:1px solid #444;border-radius:4px;padding:8px;font-size:12px;font-family:monospace;resize:vertical;"></textarea>
       <div class="dialog-actions">
+        <button id="clipboardPasteBtn" title="Inhalt aus Zwischenablage einfügen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Einfügen</button>
         <button id="clipboardCancel">Abbrechen</button>
         <button id="clipboardParse">Importieren</button>
       </div>

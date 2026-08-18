@@ -1413,8 +1413,7 @@ fn get_settings(state: State<Arc<AppState>>) -> AppSettings {
     settings_from_data(&state.data.lock().unwrap())
 }
 
-#[tauri::command]
-fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<AppSettings, String> {
+fn apply_settings_to_data(data: &mut AppData, settings: &AppSettings) -> Result<(), String> {
     let hotkeys = [
         ("POI-Hotkey", &settings.poi_hotkey),
         ("Bigmap-Hotkey", &settings.bigmap_hotkey),
@@ -1425,7 +1424,6 @@ fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<A
         }
     }
 
-    let mut data = state.data.lock().unwrap();
     data.tracking_interval = settings.tracking_interval.max(1);
     data.auto_start_live_tracking = settings.auto_start_live_tracking;
     data.auto_open_overlay = settings.auto_open_overlay;
@@ -1437,6 +1435,13 @@ fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<A
     data.auto_poi_use_sector_category = settings.auto_poi_use_sector_category;
     data.auto_poi_category = settings.auto_poi_category.trim().to_string();
     data.auto_poi_name_prefix = settings.auto_poi_name_prefix.trim().to_string();
+    Ok(())
+}
+
+#[tauri::command]
+fn save_settings(state: State<Arc<AppState>>, settings: AppSettings) -> Result<AppSettings, String> {
+    let mut data = state.data.lock().unwrap();
+    apply_settings_to_data(&mut data, &settings)?;
     save_data(&state.data_path, &data);
 
     // Keep the runtime nav route color state in sync so overlays pick it up immediately.
@@ -1514,6 +1519,189 @@ fn export_data(state: State<Arc<AppState>>, format: String) -> Result<String, St
         .ok_or("Export abgebrochen")?;
     fs::write(&path, content).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
+}
+
+fn save_backup_file(title: &str, filename: &str, content: &str) -> Result<String, String> {
+    let path = rfd::FileDialog::new()
+        .set_title(title)
+        .set_file_name(filename)
+        .add_filter("JSON-Datei", &["json"])
+        .save_file()
+        .ok_or("Export abgebrochen")?;
+    fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+fn pick_backup_file(title: &str) -> Result<PathBuf, String> {
+    rfd::FileDialog::new()
+        .set_title(title)
+        .add_filter("JSON-Datei", &["json"])
+        .pick_file()
+        .ok_or_else(|| "Import abgebrochen".to_string())
+}
+
+fn fresh_id(offset: usize) -> String {
+    format!("{}-{}", Utc::now().timestamp_millis(), offset)
+}
+
+#[tauri::command]
+fn export_routes_backup(state: State<Arc<AppState>>) -> Result<String, String> {
+    let data = state.data.lock().unwrap().clone();
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "type": "scum-walker-routes-backup",
+        "exportedAt": Utc::now().to_rfc3339(),
+        "routes": data.routes,
+    })).map_err(|e| e.to_string())?;
+    save_backup_file("Routen-Backup exportieren", "scum-walker-routes-backup.json", &content)
+}
+
+fn slugify_category(category: &str) -> String {
+    let slug: String = category
+        .trim()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() { "kategorie".to_string() } else { slug }
+}
+
+#[tauri::command]
+fn export_pois_backup(state: State<Arc<AppState>>, category: Option<String>) -> Result<String, String> {
+    let data = state.data.lock().unwrap().clone();
+    let category = category.map(|c| c.trim().to_string()).filter(|c| !c.is_empty());
+    let pois: Vec<Poi> = match &category {
+        Some(cat) => data.pois.into_iter().filter(|p| &p.category == cat).collect(),
+        None => data.pois,
+    };
+    if pois.is_empty() {
+        return Err("Keine POIs für diese Kategorie vorhanden".to_string());
+    }
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "type": "scum-walker-pois-backup",
+        "exportedAt": Utc::now().to_rfc3339(),
+        "category": category,
+        "pois": pois,
+    })).map_err(|e| e.to_string())?;
+    let filename = match &category {
+        Some(cat) => format!("scum-walker-pois-{}-backup.json", slugify_category(cat)),
+        None => "scum-walker-pois-backup.json".to_string(),
+    };
+    save_backup_file("POI-Backup exportieren", &filename, &content)
+}
+
+#[tauri::command]
+fn export_settings_backup(state: State<Arc<AppState>>) -> Result<String, String> {
+    let settings = settings_from_data(&state.data.lock().unwrap());
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "type": "scum-walker-settings-backup",
+        "exportedAt": Utc::now().to_rfc3339(),
+        "settings": settings,
+    })).map_err(|e| e.to_string())?;
+    save_backup_file("Einstellungen-Backup exportieren", "scum-walker-settings-backup.json", &content)
+}
+
+#[tauri::command]
+fn export_full_backup(state: State<Arc<AppState>>) -> Result<String, String> {
+    let data = state.data.lock().unwrap().clone();
+    let settings = settings_from_data(&data);
+    let content = serde_json::to_string_pretty(&serde_json::json!({
+        "type": "scum-walker-full-backup",
+        "exportedAt": Utc::now().to_rfc3339(),
+        "routes": data.routes,
+        "pois": data.pois,
+        "settings": settings,
+    })).map_err(|e| e.to_string())?;
+    save_backup_file("Komplett-Backup exportieren", "scum-walker-full-backup.json", &content)
+}
+
+#[tauri::command]
+fn import_full_backup(state: State<Arc<AppState>>) -> Result<AppData, String> {
+    let path = pick_backup_file("Komplett-Backup importieren")?;
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let routes: Vec<Route> = serde_json::from_value(value.get("routes").cloned().unwrap_or(serde_json::json!([])))
+        .map_err(|e| format!("Ungültiges Backup (Routen): {}", e))?;
+    let pois: Vec<Poi> = serde_json::from_value(value.get("pois").cloned().unwrap_or(serde_json::json!([])))
+        .map_err(|e| format!("Ungültiges Backup (POIs): {}", e))?;
+    let settings: Option<AppSettings> = value.get("settings").and_then(|s| serde_json::from_value(s.clone()).ok());
+
+    let mut data = state.data.lock().unwrap();
+    data.routes = routes;
+    data.pois = pois;
+    data.current_route_id = data.routes.last().map(|r| r.id.clone());
+    if let Some(settings) = settings {
+        apply_settings_to_data(&mut data, &settings)?;
+    }
+    save_data(&state.data_path, &data);
+    apply_nav_route_color(&state, &data.nav_route_color);
+    let clone = data.clone();
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("data-updated", &clone);
+    }
+    Ok(clone)
+}
+
+#[tauri::command]
+fn import_routes_backup(state: State<Arc<AppState>>) -> Result<AppData, String> {
+    let path = pick_backup_file("Routen-Backup importieren")?;
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let mut imported: Vec<Route> = serde_json::from_value(
+        value.get("routes").cloned().unwrap_or(value),
+    ).map_err(|e| format!("Ungültiges Routen-Backup: {}", e))?;
+    for (offset, route) in imported.iter_mut().enumerate() {
+        route.id = fresh_id(offset);
+    }
+
+    let mut data = state.data.lock().unwrap();
+    data.routes.extend(imported);
+    save_data(&state.data_path, &data);
+    let clone = data.clone();
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("data-updated", &clone);
+    }
+    Ok(clone)
+}
+
+#[tauri::command]
+fn import_pois_backup(state: State<Arc<AppState>>) -> Result<AppData, String> {
+    let path = pick_backup_file("POI-Backup importieren")?;
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let mut imported: Vec<Poi> = serde_json::from_value(
+        value.get("pois").cloned().unwrap_or(value),
+    ).map_err(|e| format!("Ungültiges POI-Backup: {}", e))?;
+    for (offset, poi) in imported.iter_mut().enumerate() {
+        poi.id = fresh_id(offset);
+        if poi.category.is_empty() {
+            poi.category = compute_sector(poi.x, poi.y);
+        }
+    }
+
+    let mut data = state.data.lock().unwrap();
+    data.pois.extend(imported);
+    save_data(&state.data_path, &data);
+    let clone = data.clone();
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("data-updated", &clone);
+    }
+    Ok(clone)
+}
+
+#[tauri::command]
+fn import_settings_backup(state: State<Arc<AppState>>) -> Result<AppSettings, String> {
+    let path = pick_backup_file("Einstellungen-Backup importieren")?;
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let settings: AppSettings = serde_json::from_value(
+        value.get("settings").cloned().unwrap_or(value),
+    ).map_err(|e| format!("Ungültiges Einstellungen-Backup: {}", e))?;
+
+    let mut data = state.data.lock().unwrap();
+    apply_settings_to_data(&mut data, &settings)?;
+    save_data(&state.data_path, &data);
+    apply_nav_route_color(&state, &data.nav_route_color);
+    Ok(settings_from_data(&data))
 }
 
 const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/latest/download/tiles-hires.zip";
@@ -2442,6 +2630,14 @@ fn main() {
             get_settings,
             save_settings,
             export_data,
+            export_full_backup,
+            export_routes_backup,
+            export_pois_backup,
+            export_settings_backup,
+            import_full_backup,
+            import_routes_backup,
+            import_pois_backup,
+            import_settings_backup,
             get_version,
             check_update,
             install_update,

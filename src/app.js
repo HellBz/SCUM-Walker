@@ -864,19 +864,26 @@ function getCurrentRoute() {
 async function loadData() {
   try {
     data = await invoke('get_data');
-    if (!data.routes) data.routes = [];
-    if (!data.pois) data.pois = [];
-    if (!data.hidden_categories) data.hidden_categories = [];
-    syncHiddenPoiCategories();
-    await syncRecordingState();
-    await syncLiveTrackingState();
-    await syncPoiConnections();
-    await syncPlayerPosition();
-    updateUI();
-    updateConnectionLines();
   } catch (err) {
     statusEl.textContent = 'Fehler beim Laden: ' + err;
+    return;
   }
+  if (!data.routes) data.routes = [];
+  if (!data.pois) data.pois = [];
+  if (!data.hidden_categories) data.hidden_categories = [];
+  syncHiddenPoiCategories();
+  // Each sync step below already guards its own errors, but we don't want a
+  // single failed step (e.g. no SCUM process yet) to block the initial POI/route render.
+  const steps = [syncRecordingState, syncLiveTrackingState, syncPoiConnections, syncPlayerPosition];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (err) {
+      console.error(`[loadData] ${step.name} fehlgeschlagen:`, err);
+    }
+  }
+  updateUI();
+  updateConnectionLines();
 }
 
 function updateUI() {
@@ -1354,11 +1361,26 @@ document.getElementById('addPoiFromClipboard').addEventListener('click', () => {
   clipboardInput.focus();
 });
 
+document.getElementById('clipboardPasteBtn').addEventListener('click', async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      clipboardInput.value = text.trim();
+      statusEl.textContent = 'Aus Zwischenablage eingefügt';
+    } else {
+      statusEl.textContent = 'Zwischenablage ist leer';
+    }
+  } catch (err) {
+    statusEl.textContent = 'Zwischenablage konnte nicht gelesen werden: ' + err;
+  }
+  clipboardInput.focus();
+});
+
 document.getElementById('clipboardCancel').addEventListener('click', () => {
   clipboardDialog.classList.remove('open');
 });
 
-document.getElementById('clipboardParse').addEventListener('click', () => {
+document.getElementById('clipboardParse').addEventListener('click', async () => {
   const text = (clipboardInput.value || '').trim();
   if (!text) {
     statusEl.textContent = 'Bitte POI-Daten oder Koordinaten eingeben';
@@ -1367,11 +1389,23 @@ document.getElementById('clipboardParse').addEventListener('click', () => {
   }
 
   let poiData = null;
+  let poiArray = null;
 
   // Try parsing as POI JSON
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+    if (Array.isArray(parsed)) {
+      const items = parsed.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+      if (items.length > 0) {
+        poiArray = items.map(p => ({
+          x: p.x,
+          y: p.y,
+          label: p.label || '',
+          color: p.color || POI_COLORS[0],
+          category: p.category || ''
+        }));
+      }
+    } else if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
       poiData = {
         x: parsed.x,
         y: parsed.y,
@@ -1383,7 +1417,7 @@ document.getElementById('clipboardParse').addEventListener('click', () => {
   } catch {}
 
   // Try parsing as SCUM coordinate string
-  if (!poiData) {
+  if (!poiData && !poiArray) {
     const m = text.match(/\{X=([-\d.]+)\s+Y=([-\d.]+)\s+Z=([-\d.]+)/);
     if (m) {
       poiData = {
@@ -1396,9 +1430,31 @@ document.getElementById('clipboardParse').addEventListener('click', () => {
     }
   }
 
-  if (!poiData) {
+  if (!poiData && !poiArray) {
     statusEl.textContent = 'Eingabe enthält keine gültigen Koordinaten oder POI-Daten';
     clipboardInput.focus();
+    return;
+  }
+
+  // Batch import: add all markers directly without dialog
+  if (poiArray) {
+    clipboardDialog.classList.remove('open');
+    let count = 0;
+    for (const item of poiArray) {
+      const poi = {
+        id: Date.now().toString() + '_' + count,
+        label: item.label || 'POI',
+        x: item.x,
+        y: item.y,
+        type: 'general',
+        color: item.color,
+        category: item.category || getSector(item.x, item.y)
+      };
+      data = await invoke('add_poi', { poi });
+      count++;
+    }
+    updateUI();
+    statusEl.textContent = `${count} Marker importiert`;
     return;
   }
 
@@ -1823,20 +1879,6 @@ if (window.__TAURI__.event) {
     }
   });
 }
-
-async function exportData(format) {
-  try {
-    const path = await invoke('export_data', { format });
-    statusEl.textContent = `${format.toUpperCase()} exportiert: ${path}`;
-  } catch (err) {
-    if (String(err) !== 'Export abgebrochen') {
-      statusEl.textContent = 'Export fehlgeschlagen: ' + err;
-    }
-  }
-}
-
-document.getElementById('exportJson').addEventListener('click', () => exportData('json'));
-document.getElementById('exportCsv').addEventListener('click', () => exportData('csv'));
 
 let sidebarState = { livemap_collapsed: false, routes_collapsed: false, pois_collapsed: false };
 
@@ -2368,6 +2410,7 @@ window.addEventListener('keydown', (e) => {
 
 function toggleSettingsPanel(show) {
   if (settingsPanel) settingsPanel.classList.toggle('visible', show);
+  if (show) populateBackupPoiCategorySelect();
 }
 if (settingsToggle && settingsPanel) settingsToggle.addEventListener('click', () => toggleSettingsPanel(!settingsPanel.classList.contains('visible')));
 if (settingsClose) settingsClose.addEventListener('click', () => toggleSettingsPanel(false));
@@ -2440,6 +2483,65 @@ function resetColorInput(input) {
 
 document.getElementById('settingsResetNavRouteColor')?.addEventListener('click', () => resetColorInput(settingsNavRouteColor));
 document.getElementById('settingsResetAutoPoiColor')?.addEventListener('click', () => resetColorInput(settingsAutoPoiColor));
+
+// === Backup: Export/Import von Routen, POIs und Einstellungen ===
+const backupStatus = document.getElementById('backupStatus');
+
+function setBackupStatus(text, isError) {
+  if (!backupStatus) return;
+  backupStatus.textContent = text;
+  backupStatus.style.color = isError ? '#e45858' : '#888';
+}
+
+async function runBackupAction(command, successText, args) {
+  try {
+    await invoke(command, args);
+    setBackupStatus(successText, false);
+  } catch (err) {
+    const msg = err?.toString?.() || String(err);
+    if (msg !== 'Export abgebrochen' && msg !== 'Import abgebrochen') {
+      setBackupStatus('Fehler: ' + msg, true);
+    }
+    return;
+  }
+  setTimeout(() => setBackupStatus('', false), 3000);
+}
+
+const backupPoiCategorySelect = document.getElementById('backupPoiCategorySelect');
+
+function populateBackupPoiCategorySelect() {
+  if (!backupPoiCategorySelect) return;
+  const savedValue = backupPoiCategorySelect.value;
+  const categories = getPoiCategories();
+  backupPoiCategorySelect.innerHTML = '<option value="">Alle Kategorien</option>';
+  categories.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    if (cat === savedValue) opt.selected = true;
+    backupPoiCategorySelect.appendChild(opt);
+  });
+}
+
+document.getElementById('backupExportFull')?.addEventListener('click', () => runBackupAction('export_full_backup', 'Komplett-Backup exportiert.'));
+document.getElementById('backupImportFull')?.addEventListener('click', async () => {
+  if (!confirm('Komplett-Backup importieren? Dabei werden alle aktuellen Routen, POIs und Einstellungen ersetzt.')) return;
+  await runBackupAction('import_full_backup', 'Komplett-Backup importiert.');
+  await loadSettings();
+});
+document.getElementById('backupExportRoutes')?.addEventListener('click', () => runBackupAction('export_routes_backup', 'Routen exportiert.'));
+document.getElementById('backupExportPois')?.addEventListener('click', () => {
+  const category = backupPoiCategorySelect?.value || null;
+  const successText = category ? `POIs der Kategorie "${category}" exportiert.` : 'POIs exportiert.';
+  runBackupAction('export_pois_backup', successText, { category });
+});
+document.getElementById('backupExportSettings')?.addEventListener('click', () => runBackupAction('export_settings_backup', 'Einstellungen exportiert.'));
+document.getElementById('backupImportRoutes')?.addEventListener('click', () => runBackupAction('import_routes_backup', 'Routen importiert.'));
+document.getElementById('backupImportPois')?.addEventListener('click', () => runBackupAction('import_pois_backup', 'POIs importiert.'));
+document.getElementById('backupImportSettings')?.addEventListener('click', async () => {
+  await runBackupAction('import_settings_backup', 'Einstellungen importiert.');
+  await loadSettings();
+});
 
 loadSettings();
 
