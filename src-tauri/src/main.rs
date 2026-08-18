@@ -219,10 +219,6 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
-    pub(crate) fn app_data(&self) -> AppData {
-        self.data.lock().unwrap().clone()
-    }
-
     pub(crate) fn current_position(&self) -> Option<CoordRecord> {
         self.current_position.lock().unwrap().clone()
     }
@@ -1716,22 +1712,6 @@ struct UpdateInfo {
     is_windows: bool,
 }
 
-fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
-    let s = s.trim_start_matches('v');
-    let mut parts = s.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    let patch = parts.next()?.parse().ok()?;
-    Some((major, minor, patch))
-}
-
-fn version_greater(a: &str, b: &str) -> bool {
-    match (parse_version(a), parse_version(b)) {
-        (Some(a), Some(b)) => a > b,
-        _ => false,
-    }
-}
-
 fn release_version() -> &'static str {
     option_env!("RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
@@ -1781,8 +1761,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                 || {},
             ).await
                 .map_err(|e| format!("Update-Installation fehlgeschlagen: {}", e))?;
-            let _ = app.restart();
-            Ok(())
+            app.restart();
         }
         None => Err("Kein Update verfügbar".to_string()),
     }
