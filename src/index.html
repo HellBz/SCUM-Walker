@@ -202,18 +202,17 @@
         <div class="settings-section">
           <h4>Backup</h4>
           <p class="settings-hint">Routen, POIs und Einstellungen jeweils einzeln als Datei sichern oder aus einer Backup-Datei wiederherstellen.</p>
-          <div class="settings-row backup-row backup-row-full">
-            <span class="backup-label">App-Backup</span>
-            <div class="backup-buttons">
-              <button id="backupExportFull" type="button" title="Routen, POIs und Einstellungen zusammen exportieren">Exportieren</button>
-              <button id="backupImportFull" type="button" title="Komplett-Backup importieren (ersetzt Routen, POIs und Einstellungen)">Importieren</button>
+          <div class="settings-row backup-row-pois">
+            <div class="backup-line">
+              <span class="backup-label">Routen</span>
+              <select id="backupRouteSelect" title="Route für den Export wählen"><option value="">Alle Routen</option></select>
             </div>
-          </div>
-          <div class="settings-row backup-row">
-            <span class="backup-label">Routen</span>
-            <div class="backup-buttons">
-              <button id="backupExportRoutes" type="button" title="Routen exportieren">Exportieren</button>
-              <button id="backupImportRoutes" type="button" title="Routen importieren">Importieren</button>
+            <div class="backup-line">
+              <span class="backup-label"></span>
+              <div class="backup-buttons">
+                <button id="backupExportRoutes" type="button" title="Routen exportieren">Exportieren</button>
+                <button id="backupImportRoutes" type="button" title="Routen importieren">Importieren</button>
+              </div>
             </div>
           </div>
           <div class="settings-row backup-row-pois">
@@ -223,9 +222,16 @@
             </div>
             <div class="backup-line">
               <span class="backup-label"></span>
+              <label class="backup-checkbox" title="POI-Screenshots mit exportieren (ZIP-Datei)">
+                <input type="checkbox" id="backupPoiIncludeImages">
+                <span>mit Bildern</span>
+              </label>
+            </div>
+            <div class="backup-line">
+              <span class="backup-label"></span>
               <div class="backup-buttons">
                 <button id="backupExportPois" type="button" title="POIs (ggf. nur gewählte Kategorie) exportieren">Exportieren</button>
-                <button id="backupImportPois" type="button" title="POIs importieren">Importieren</button>
+                <button id="backupImportPois" type="button" title="POIs importieren (JSON oder ZIP)">Importieren</button>
               </div>
             </div>
           </div>
@@ -234,6 +240,22 @@
             <div class="backup-buttons">
               <button id="backupExportSettings" type="button" title="Einstellungen exportieren">Exportieren</button>
               <button id="backupImportSettings" type="button" title="Einstellungen importieren">Importieren</button>
+            </div>
+          </div>
+          <div class="settings-row backup-row-pois">
+            <div class="backup-line">
+              <span class="backup-label">App Backup</span>
+              <label class="backup-checkbox" title="POI-Screenshots mit ins Backup packen (größere Datei)">
+                <input type="checkbox" id="backupAppIncludeImages">
+                <span>mit POI-Bildern</span>
+              </label>
+            </div>
+            <div class="backup-line">
+              <span class="backup-label"></span>
+              <div class="backup-buttons">
+                <button id="backupExportApp" type="button" title="Komplettes App-Backup als ZIP exportieren">Exportieren</button>
+                <button id="backupImportApp" type="button" title="App-Backup aus ZIP importieren (ersetzt alle Daten)">Importieren</button>
+              </div>
             </div>
           </div>
           <div id="backupStatus" style="color:#888; font-size:12px; margin-top:6px;"></div>

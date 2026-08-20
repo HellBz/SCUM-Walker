@@ -1382,6 +1382,20 @@ button:hover { background: #3a3a3a; }
 .backup-row .backup-buttons button:hover,
 .backup-row-pois .backup-buttons button:hover { background: #333; }
 
+.backup-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #aaa;
+    cursor: pointer;
+    flex: 1;
+    white-space: nowrap;
+}
+.backup-checkbox input {
+    cursor: pointer;
+}
+
 .reset-color-btn {
   width: 32px;
   height: 32px;

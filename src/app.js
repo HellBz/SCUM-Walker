@@ -1822,6 +1822,7 @@ if (window.__TAURI__.event) {
     if (!data.pois) data.pois = [];
     if (!data.hidden_categories) data.hidden_categories = [];
     syncHiddenPoiCategories();
+    populateBackupRouteSelect();
     updateUI();
   });
 
@@ -2410,7 +2411,10 @@ window.addEventListener('keydown', (e) => {
 
 function toggleSettingsPanel(show) {
   if (settingsPanel) settingsPanel.classList.toggle('visible', show);
-  if (show) populateBackupPoiCategorySelect();
+  if (show) {
+    populateBackupPoiCategorySelect();
+    populateBackupRouteSelect();
+  }
 }
 if (settingsToggle && settingsPanel) settingsToggle.addEventListener('click', () => toggleSettingsPanel(!settingsPanel.classList.contains('visible')));
 if (settingsClose) settingsClose.addEventListener('click', () => toggleSettingsPanel(false));
@@ -2508,6 +2512,7 @@ async function runBackupAction(command, successText, args) {
 }
 
 const backupPoiCategorySelect = document.getElementById('backupPoiCategorySelect');
+const backupRouteSelect = document.getElementById('backupRouteSelect');
 
 function populateBackupPoiCategorySelect() {
   if (!backupPoiCategorySelect) return;
@@ -2523,19 +2528,45 @@ function populateBackupPoiCategorySelect() {
   });
 }
 
-document.getElementById('backupExportFull')?.addEventListener('click', () => runBackupAction('export_full_backup', 'Komplett-Backup exportiert.'));
-document.getElementById('backupImportFull')?.addEventListener('click', async () => {
-  if (!confirm('Komplett-Backup importieren? Dabei werden alle aktuellen Routen, POIs und Einstellungen ersetzt.')) return;
-  await runBackupAction('import_full_backup', 'Komplett-Backup importiert.');
-  await loadSettings();
+function populateBackupRouteSelect() {
+  if (!backupRouteSelect) return;
+  const savedValue = backupRouteSelect.value;
+  backupRouteSelect.innerHTML = '<option value="">Alle Routen</option>';
+  (data.routes || []).forEach(route => {
+    const opt = document.createElement('option');
+    opt.value = route.id;
+    opt.textContent = route.name || route.id;
+    if (route.id === savedValue) opt.selected = true;
+    backupRouteSelect.appendChild(opt);
+  });
+}
+
+document.getElementById('backupExportRoutes')?.addEventListener('click', () => {
+  const routeId = backupRouteSelect?.value || null;
+  let successText = routeId ? 'Ausgewählte Route exportiert.' : 'Alle Routen exportiert.';
+  runBackupAction('export_routes_backup', successText, { routeId });
 });
-document.getElementById('backupExportRoutes')?.addEventListener('click', () => runBackupAction('export_routes_backup', 'Routen exportiert.'));
 document.getElementById('backupExportPois')?.addEventListener('click', () => {
   const category = backupPoiCategorySelect?.value || null;
-  const successText = category ? `POIs der Kategorie "${category}" exportiert.` : 'POIs exportiert.';
-  runBackupAction('export_pois_backup', successText, { category });
+  const includeImages = document.getElementById('backupPoiIncludeImages')?.checked ?? false;
+  let successText = category ? `POIs der Kategorie "${category}" exportiert.` : 'POIs exportiert.';
+  if (includeImages) successText += ' (inkl. Bilder als ZIP)';
+  runBackupAction('export_pois_backup', successText, { category, includeImages });
 });
 document.getElementById('backupExportSettings')?.addEventListener('click', () => runBackupAction('export_settings_backup', 'Einstellungen exportiert.'));
+
+document.getElementById('backupExportApp')?.addEventListener('click', () => {
+  const includeImages = document.getElementById('backupAppIncludeImages')?.checked ?? false;
+  const successText = includeImages ? 'App-Backup (inkl. Bilder) exportiert.' : 'App-Backup exportiert.';
+  runBackupAction('export_full_zip_backup', successText, { includeImages });
+});
+
+document.getElementById('backupImportApp')?.addEventListener('click', async () => {
+  if (!confirm('App-Backup importieren? Dabei werden alle aktuellen Routen, POIs und Einstellungen ersetzt.')) return;
+  await runBackupAction('import_full_zip_backup', 'App-Backup importiert.');
+  await loadSettings();
+});
+
 document.getElementById('backupImportRoutes')?.addEventListener('click', () => runBackupAction('import_routes_backup', 'Routen importiert.'));
 document.getElementById('backupImportPois')?.addEventListener('click', () => runBackupAction('import_pois_backup', 'POIs importiert.'));
 document.getElementById('backupImportSettings')?.addEventListener('click', async () => {

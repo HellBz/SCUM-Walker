@@ -22,3 +22,6 @@ src-tauri/scum-walker-export.*
 
 # Signing keys (private key must not be committed)
 src-tauri/keys/
+
+# Master server list tool (standalone, not part of the app)
+tools/masterlist/

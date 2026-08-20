@@ -5,8 +5,9 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::io::{Read, Write};
 use std::thread;
 use std::time::Duration;
 use tauri::{Emitter, Manager, State};
@@ -1541,14 +1542,26 @@ fn fresh_id(offset: usize) -> String {
 }
 
 #[tauri::command]
-fn export_routes_backup(state: State<Arc<AppState>>) -> Result<String, String> {
+fn export_routes_backup(state: State<Arc<AppState>>, route_id: Option<String>) -> Result<String, String> {
     let data = state.data.lock().unwrap().clone();
+    let route_id = route_id.map(|r| r.trim().to_string()).filter(|r| !r.is_empty());
+    let routes: Vec<Route> = match &route_id {
+        Some(id) => data.routes.into_iter().filter(|r| &r.id == id).collect(),
+        None => data.routes,
+    };
+    if routes.is_empty() {
+        return Err("Keine Routen für diese Auswahl vorhanden".to_string());
+    }
+    let filename = match &route_id {
+        Some(_) => format!("scum-walker-route-backup-{}.json", chrono::Utc::now().format("%Y%m%d-%H%M%S")),
+        None => "scum-walker-routes-backup.json".to_string(),
+    };
     let content = serde_json::to_string_pretty(&serde_json::json!({
         "type": "scum-walker-routes-backup",
         "exportedAt": Utc::now().to_rfc3339(),
-        "routes": data.routes,
+        "routes": routes,
     })).map_err(|e| e.to_string())?;
-    save_backup_file("Routen-Backup exportieren", "scum-walker-routes-backup.json", &content)
+    save_backup_file("Routen-Backup exportieren", &filename, &content)
 }
 
 fn slugify_category(category: &str) -> String {
@@ -1561,28 +1574,82 @@ fn slugify_category(category: &str) -> String {
     if slug.is_empty() { "kategorie".to_string() } else { slug }
 }
 
+fn is_zip_file(path: &Path) -> bool {
+    if let Some(ext) = path.extension() {
+        ext.to_ascii_lowercase().to_string_lossy() == "zip"
+    } else {
+        false
+    }
+}
+
 #[tauri::command]
-fn export_pois_backup(state: State<Arc<AppState>>, category: Option<String>) -> Result<String, String> {
+fn export_pois_backup(state: State<Arc<AppState>>, category: Option<String>, include_images: bool) -> Result<String, String> {
     let data = state.data.lock().unwrap().clone();
+    let app_data_dir = app_data_dir(&state)?;
     let category = category.map(|c| c.trim().to_string()).filter(|c| !c.is_empty());
     let pois: Vec<Poi> = match &category {
-        Some(cat) => data.pois.into_iter().filter(|p| &p.category == cat).collect(),
-        None => data.pois,
+        Some(cat) => data.pois.clone().into_iter().filter(|p| &p.category == cat).collect(),
+        None => data.pois.clone(),
     };
     if pois.is_empty() {
         return Err("Keine POIs für diese Kategorie vorhanden".to_string());
     }
-    let content = serde_json::to_string_pretty(&serde_json::json!({
+
+    if !include_images {
+        let content = serde_json::to_string_pretty(&serde_json::json!({
+            "type": "scum-walker-pois-backup",
+            "exportedAt": Utc::now().to_rfc3339(),
+            "category": category,
+            "pois": pois,
+        })).map_err(|e| e.to_string())?;
+        let filename = match &category {
+            Some(cat) => format!("scum-walker-pois-{}-backup.json", slugify_category(cat)),
+            None => "scum-walker-pois-backup.json".to_string(),
+        };
+        return save_backup_file("POI-Backup exportieren", &filename, &content);
+    }
+
+    // ZIP export with images
+    let filename = match &category {
+        Some(cat) => format!("scum-walker-pois-{}-backup.zip", slugify_category(cat)),
+        None => format!("scum-walker-pois-backup-{}.zip", chrono::Utc::now().format("%Y%m%d-%H%M%S")),
+    };
+    let path = rfd::FileDialog::new()
+        .set_title("POI-Backup mit Bildern exportieren")
+        .set_file_name(&filename)
+        .add_filter("ZIP-Datei", &["zip"])
+        .save_file()
+        .ok_or("Export abgebrochen")?;
+
+    let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::FileOptions::<zip::write::ExtendedFileOptions>::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    let manifest = serde_json::to_string_pretty(&serde_json::json!({
         "type": "scum-walker-pois-backup",
         "exportedAt": Utc::now().to_rfc3339(),
         "category": category,
         "pois": pois,
     })).map_err(|e| e.to_string())?;
-    let filename = match &category {
-        Some(cat) => format!("scum-walker-pois-{}-backup.json", slugify_category(cat)),
-        None => "scum-walker-pois-backup.json".to_string(),
-    };
-    save_backup_file("POI-Backup exportieren", &filename, &content)
+    zip.start_file("pois.json", options.clone()).map_err(|e| e.to_string())?;
+    zip.write_all(manifest.as_bytes()).map_err(|e| e.to_string())?;
+
+    let image_dir = app_data_dir.join("poi_images");
+    for poi in &pois {
+        if let Some(filename) = poi.image_path.as_ref() {
+            let img_path = image_dir.join(filename);
+            if img_path.exists() {
+                let bytes = std::fs::read(&img_path).map_err(|e| e.to_string())?;
+                zip.start_file(format!("poi_images/{}", filename), options.clone()).map_err(|e| e.to_string())?;
+                zip.write_all(&bytes).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
 }
 
 #[tauri::command]
@@ -1662,15 +1729,56 @@ fn import_routes_backup(state: State<Arc<AppState>>) -> Result<AppData, String> 
 #[tauri::command]
 fn import_pois_backup(state: State<Arc<AppState>>) -> Result<AppData, String> {
     let path = pick_backup_file("POI-Backup importieren")?;
-    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    let mut imported: Vec<Poi> = serde_json::from_value(
-        value.get("pois").cloned().unwrap_or(value),
-    ).map_err(|e| format!("Ungültiges POI-Backup: {}", e))?;
+    let app_data_dir = app_data_dir(&state)?;
+
+    let mut imported: Vec<Poi>;
+    let mut images_to_restore: Vec<(String, Vec<u8>)> = Vec::new();
+
+    if is_zip_file(&path) {
+        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        let mut zip = zip::read::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        let mut manifest_bytes: Option<Vec<u8>> = None;
+
+        for i in 0..zip.len() {
+            let mut file = zip.by_index(i).map_err(|e| e.to_string())?;
+            let name = file.name().to_string();
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+
+            if name == "pois.json" {
+                manifest_bytes = Some(bytes);
+            } else if name.starts_with("poi_images/") {
+                if let Some(filename) = Path::new(&name).file_name().and_then(|n| n.to_str()) {
+                    images_to_restore.push((filename.to_string(), bytes));
+                }
+            }
+        }
+
+        let manifest = manifest_bytes.ok_or("ZIP enthält keine pois.json")?;
+        let value: serde_json::Value = serde_json::from_slice(&manifest).map_err(|e| e.to_string())?;
+        imported = serde_json::from_value(
+            value.get("pois").cloned().unwrap_or(value),
+        ).map_err(|e| format!("Ungültiges POI-Backup: {}", e))?;
+    } else {
+        let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        imported = serde_json::from_value(
+            value.get("pois").cloned().unwrap_or(value),
+        ).map_err(|e| format!("Ungültiges POI-Backup: {}", e))?;
+    }
+
     for (offset, poi) in imported.iter_mut().enumerate() {
         poi.id = fresh_id(offset);
         if poi.category.is_empty() {
             poi.category = compute_sector(poi.x, poi.y);
+        }
+    }
+
+    if !images_to_restore.is_empty() {
+        let image_dir = app_data_dir.join("poi_images");
+        let _ = std::fs::create_dir_all(&image_dir);
+        for (filename, bytes) in images_to_restore {
+            let _ = std::fs::write(image_dir.join(&filename), bytes);
         }
     }
 
@@ -1698,6 +1806,139 @@ fn import_settings_backup(state: State<Arc<AppState>>) -> Result<AppSettings, St
     save_data(&state.data_path, &data);
     apply_nav_route_color(&state, &data.nav_route_color);
     Ok(settings_from_data(&data))
+}
+
+fn app_data_dir(state: &State<Arc<AppState>>) -> Result<PathBuf, String> {
+    state.data_path.parent()
+        .ok_or_else(|| "Konnte AppData-Verzeichnis nicht ermitteln".to_string())
+        .map(|p| p.to_path_buf())
+}
+
+#[tauri::command]
+fn export_full_zip_backup(state: State<Arc<AppState>>, include_images: bool) -> Result<String, String> {
+    let data = state.data.lock().unwrap().clone();
+    let settings = settings_from_data(&data);
+    let nav_target = state.nav_target.lock().unwrap().clone();
+    let nav_route_color = state.nav_route_color.lock().unwrap().clone();
+    let app_data_dir = app_data_dir(&state)?;
+
+    let filename = format!("scum-walker-full-backup-{}.zip", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    let path = rfd::FileDialog::new()
+        .set_title("Komplett-ZIP-Backup exportieren")
+        .set_file_name(&filename)
+        .add_filter("ZIP-Datei", &["zip"])
+        .save_file()
+        .ok_or("Export abgebrochen")?;
+
+    let file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::FileOptions::<zip::write::ExtendedFileOptions>::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    zip.start_file("scum_walker_data.json", options.clone()).map_err(|e| e.to_string())?;
+    zip.write_all(serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    zip.start_file("nav_target.json", options.clone()).map_err(|e| e.to_string())?;
+    zip.write_all(serde_json::to_string_pretty(&nav_target).map_err(|e| e.to_string())?.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    zip.start_file("nav_route_color.json", options.clone()).map_err(|e| e.to_string())?;
+    zip.write_all(serde_json::to_string_pretty(&serde_json::json!({"color": nav_route_color})).map_err(|e| e.to_string())?.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    zip.start_file("settings.json", options.clone()).map_err(|e| e.to_string())?;
+    zip.write_all(serde_json::to_string_pretty(&serde_json::json!({
+        "type": "scum-walker-settings-backup",
+        "exportedAt": chrono::Utc::now().to_rfc3339(),
+        "settings": settings,
+    })).map_err(|e| e.to_string())?.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    if include_images {
+        let image_dir = app_data_dir.join("poi_images");
+        if image_dir.exists() {
+            for entry in std::fs::read_dir(&image_dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let path = entry.path();
+                if path.is_file() {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+                    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                    zip.start_file(format!("poi_images/{}", name), options.clone()).map_err(|e| e.to_string())?;
+                    zip.write_all(&bytes).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
+fn import_full_zip_backup(state: State<Arc<AppState>>) -> Result<AppData, String> {
+    let path = rfd::FileDialog::new()
+        .set_title("Komplett-ZIP-Backup importieren")
+        .add_filter("ZIP-Datei", &["zip"])
+        .pick_file()
+        .ok_or("Import abgebrochen")?;
+
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut zip = zip::read::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let app_data_dir = app_data_dir(&state)?;
+
+    let mut routes: Option<Vec<Route>> = None;
+    let mut pois: Option<Vec<Poi>> = None;
+    let mut settings: Option<AppSettings> = None;
+
+    for i in 0..zip.len() {
+        let mut file = zip.by_index(i).map_err(|e| e.to_string())?;
+        let name = file.name().to_string();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+
+        match name.as_str() {
+            "scum_walker_data.json" => {
+                let data: AppData = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Ungültige Daten-Datei im ZIP: {}", e))?;
+                routes = Some(data.routes);
+                pois = Some(data.pois);
+            }
+            "settings.json" => {
+                let value: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("Ungültige Einstellungen-Datei im ZIP: {}", e))?;
+                settings = value.get("settings").and_then(|s| serde_json::from_value(s.clone()).ok());
+            }
+            s if s.starts_with("poi_images/") => {
+                if let Some(file_name) = Path::new(s).file_name().and_then(|n| n.to_str()) {
+                    let image_dir = app_data_dir.join("poi_images");
+                    let _ = std::fs::create_dir_all(&image_dir);
+                    let _ = std::fs::write(image_dir.join(file_name), bytes);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut data = state.data.lock().unwrap();
+    if let Some(routes) = routes {
+        data.routes = routes;
+        data.current_route_id = data.routes.last().map(|r| r.id.clone());
+    }
+    if let Some(pois) = pois {
+        data.pois = pois;
+    }
+    if let Some(settings) = settings {
+        apply_settings_to_data(&mut data, &settings)?;
+    }
+    save_data(&state.data_path, &data);
+    apply_nav_route_color(&state, &data.nav_route_color);
+    let clone = data.clone();
+    if let Some(app_handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = app_handle.emit("data-updated", &clone);
+    }
+    Ok(clone)
 }
 
 const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/latest/download/tiles-hires.zip";
@@ -2617,6 +2858,8 @@ fn main() {
             import_routes_backup,
             import_pois_backup,
             import_settings_backup,
+            export_full_zip_backup,
+            import_full_zip_backup,
             get_version,
             check_update,
             install_update,
