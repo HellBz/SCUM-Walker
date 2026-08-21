@@ -1019,6 +1019,19 @@ fn send_ctrl_c_to_scum() -> Result<(), String> {
         return Err("SCUM läuft mit Administratorrechten, SCUM Walker nicht. Windows blockiert dadurch die Tastatureingabe. Bitte starte SCUM Walker ebenfalls als Administrator.".to_string());
     }
 
+    // Falls der Nutzer gerade physisch Alt (oder Shift) hält, würde unser injiziertes
+    // Strg+C von SCUM je nach Keybinding als andere Kombination interpretiert werden
+    // (z. B. Alt+C = Bauelement neu bauen/reparieren). Kurz warten, bis Alt/Shift
+    // losgelassen wird, bevor wir Strg+C senden - sonst überspringen.
+    let mut waited_ms = 0;
+    while (is_key_pressed(VK_MENU) || is_key_pressed(VK_SHIFT)) && waited_ms < 500 {
+        thread::sleep(Duration::from_millis(20));
+        waited_ms += 20;
+    }
+    if is_key_pressed(VK_MENU) || is_key_pressed(VK_SHIFT) {
+        return Err("Alt/Shift ist aktuell gedrückt, Positionsabfrage übersprungen".to_string());
+    }
+
     fn kbd_input(scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
         INPUT {
             r#type: INPUT_KEYBOARD,
