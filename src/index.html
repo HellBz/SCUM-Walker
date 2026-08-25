@@ -191,11 +191,12 @@
           </div>
         </div>
         <div class="settings-section">
-          <h4>Sprache</h4>
-          <label class="settings-label">Anzeigesprache
-            <select id="settingsLanguage" disabled style="width:100%; margin-top:6px; padding:6px; background:#222; border:1px solid #444; border-radius:4px; color:#888;">
-              <option>Deutsch (bald verfügbar)</option>
-              <option>English (coming soon)</option>
+          <h4 data-i18n="settings.section.language">Sprache</h4>
+          <label class="settings-label" data-i18n-title="settings.language">
+            <span data-i18n="settings.language">Anzeigesprache</span>
+            <select id="settingsLanguage" style="width:100%; margin-top:6px; padding:6px; background:#222; border:1px solid #444; border-radius:4px; color:#e2e2e2;">
+              <option value="de" data-i18n="lang.de">Deutsch</option>
+              <option value="en" data-i18n="lang.en">English</option>
             </select>
           </label>
         </div>
@@ -338,7 +339,8 @@
 
   <script src="lib/leaflet.js"></script>
   <script src="lib/leaflet.markercluster.js"></script>
+  <script src="i18n/i18n.js?v=3"></script>
   <script src="navigation.js?v=1"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

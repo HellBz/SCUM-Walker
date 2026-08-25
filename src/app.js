@@ -2306,6 +2306,7 @@ const settingsAutoPoiColor = document.getElementById('settingsAutoPoiColor');
 const settingsAutoPoiUseSector = document.getElementById('settingsAutoPoiUseSector');
 const settingsAutoPoiCategory = document.getElementById('settingsAutoPoiCategory');
 const settingsAutoPoiPrefix = document.getElementById('settingsAutoPoiPrefix');
+const settingsLanguage = document.getElementById('settingsLanguage');
 const settingsSave = document.getElementById('settingsSave');
 const settingsSaveStatus = document.getElementById('settingsSaveStatus');
 
@@ -2437,6 +2438,8 @@ async function loadSettings() {
     if (settingsAutoPoiUseSector) settingsAutoPoiUseSector.checked = s.auto_poi_use_sector_category;
     if (settingsAutoPoiCategory) settingsAutoPoiCategory.value = s.auto_poi_category || '';
     if (settingsAutoPoiPrefix) settingsAutoPoiPrefix.value = s.auto_poi_name_prefix;
+    if (settingsLanguage) settingsLanguage.value = s.language || 'de';
+    await I18n.load(s.language || 'de');
     trackingInterval = s.tracking_interval || 10;
     updateMarkerTransition();
     validateHotkeys();
@@ -2462,6 +2465,7 @@ async function saveSettings() {
       auto_poi_use_sector_category: settingsAutoPoiUseSector?.checked ?? true,
       auto_poi_category: settingsAutoPoiCategory?.value || '',
       auto_poi_name_prefix: settingsAutoPoiPrefix?.value || 'POI',
+      language: settingsLanguage?.value || 'de',
     };
     const saved = await invoke('save_settings', { settings: payload });
     trackingInterval = saved.tracking_interval;
@@ -2479,6 +2483,7 @@ async function saveSettings() {
   }
 }
 if (settingsSave) settingsSave.addEventListener('click', saveSettings);
+if (settingsLanguage) settingsLanguage.addEventListener('change', () => I18n.load(settingsLanguage.value));
 
 function resetColorInput(input) {
   if (!input) return;

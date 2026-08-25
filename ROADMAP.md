@@ -66,6 +66,17 @@ Windows-Spiel ist, ist das für Linux/macOS nicht dringend – aber ggf.
 sinnvoll für Nutzer, die die App nur zur offline Karten-/Routenplanung
 verwenden.
 
+## 10. Vordefinierte Marker/POI-Packs (Import)
+Kuratierte POI-Sets (z. B. Bunker, Trader, Polizeistationen) sollen sich
+importieren lassen, entweder direkt im Release gebündelt oder remote
+nachladbar. Für die Remote-Variante: separates Content-Repo (analog zu den
+Hi-Res-Tiles), das per GitHub-Release-Assets sowohl Tiles als auch mehrere
+POI-Pack-ZIPs bereitstellt, plus einen kleinen Index (`poi-packs/index.json`)
+mit Name/Beschreibung/Anzahl pro Pack. Die App lädt den Index, zeigt eine
+Auswahl an und importiert das gewählte Pack über die bestehende
+ZIP-Import-Logik (Quelle dann URL statt lokale Datei). Zusätzlich 1-2
+Standard-Packs im Installer bündeln als Offline-Fallback.
+
 ## Verworfen
 - **GPX/KML-Export von Routen** – ergibt keinen Sinn, da SCUM-Koordinaten
   spielinterne X/Y-Werte und keine echten GPS-Koordinaten sind.

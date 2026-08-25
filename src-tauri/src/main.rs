@@ -173,6 +173,8 @@ struct AppData {
     auto_poi_category: String,
     #[serde(default = "default_auto_poi_name_prefix")]
     auto_poi_name_prefix: String,
+    #[serde(default = "default_language")]
+    language: String,
 }
 
 fn default_interval() -> u64 {
@@ -201,6 +203,10 @@ fn default_auto_poi_color() -> String {
 
 fn default_auto_poi_name_prefix() -> String {
     "POI".to_string()
+}
+
+fn default_language() -> String {
+    "en".to_string()
 }
 
 pub(crate) struct AppState {
@@ -1400,6 +1406,7 @@ struct AppSettings {
     auto_poi_use_sector_category: bool,
     auto_poi_category: String,
     auto_poi_name_prefix: String,
+    language: String,
 }
 
 fn settings_from_data(data: &AppData) -> AppSettings {
@@ -1415,6 +1422,7 @@ fn settings_from_data(data: &AppData) -> AppSettings {
         auto_poi_use_sector_category: data.auto_poi_use_sector_category,
         auto_poi_category: data.auto_poi_category.clone(),
         auto_poi_name_prefix: data.auto_poi_name_prefix.clone(),
+        language: data.language.clone(),
     }
 }
 
@@ -1445,7 +1453,52 @@ fn apply_settings_to_data(data: &mut AppData, settings: &AppSettings) -> Result<
     data.auto_poi_use_sector_category = settings.auto_poi_use_sector_category;
     data.auto_poi_category = settings.auto_poi_category.trim().to_string();
     data.auto_poi_name_prefix = settings.auto_poi_name_prefix.trim().to_string();
+    data.language = settings.language.trim().to_lowercase();
     Ok(())
+}
+
+const BUNDLE_I18N_DE: &str = include_str!("../../src/i18n/de.json");
+const BUNDLE_I18N_EN: &str = include_str!("../../src/i18n/en.json");
+
+fn i18n_dir_path(handle: &tauri::AppHandle) -> std::path::PathBuf {
+    handle.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("i18n")
+}
+
+fn init_local_i18n_files(handle: &tauri::AppHandle) {
+    let dir = i18n_dir_path(handle);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[i18n] FEHLER: Konnte Verzeichnis nicht erstellen: {} -> {}", dir.display(), e);
+        return;
+    }
+    let files = [("de.json", BUNDLE_I18N_DE), ("en.json", BUNDLE_I18N_EN)];
+    for (name, content) in files {
+        let path = dir.join(name);
+        if !path.exists() {
+            if let Err(e) = std::fs::write(&path, content) {
+                eprintln!("[i18n] FEHLER: Konnte {} nicht schreiben: {}", path.display(), e);
+            } else {
+                eprintln!("[i18n] Initial erstellt: {}", path.display());
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn load_translation(lang: String, app_handle: tauri::AppHandle) -> Result<String, String> {
+    let lang = lang.trim().to_lowercase().replace(|c: char| !c.is_alphanumeric(), "");
+    if lang.is_empty() {
+        return Err("Sprache darf nicht leer sein".to_string());
+    }
+    let dir = i18n_dir_path(&app_handle);
+    let local = dir.join(format!("{}.json", lang));
+    if local.exists() {
+        return std::fs::read_to_string(&local).map_err(|e| e.to_string());
+    }
+    match lang.as_str() {
+        "de" => Ok(BUNDLE_I18N_DE.to_string()),
+        "en" => Ok(BUNDLE_I18N_EN.to_string()),
+        _ => Err(format!("Übersetzung nicht verfügbar: {}", lang)),
+    }
 }
 
 #[tauri::command]
@@ -2822,6 +2875,7 @@ fn main() {
                 eprintln!("[tiles] Verzeichnis: {}", tiles_dir.display());
             }
             ensure_lowres_tiles(&tiles_dir);
+            init_local_i18n_files(&app.handle());
             http_server::start_http_server(state.clone(), tiles_dir.display().to_string());
 
             let overlay_config = load_overlay_config(&overlay_config_path(&app.handle()));
@@ -2862,6 +2916,7 @@ fn main() {
             get_data,
             get_settings,
             save_settings,
+            load_translation,
             export_data,
             export_full_backup,
             export_routes_backup,
