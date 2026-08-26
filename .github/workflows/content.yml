@@ -1,0 +1,31 @@
+name: Content Release
+
+on:
+  push:
+    branches:
+      - content
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-content:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout content branch
+        uses: actions/checkout@v4
+
+      - name: Pack hi-res tiles
+        run: |
+          cd tools/tiles-hires
+          zip -r ../../tiles-hires.zip 4 5 6
+          cd ../..
+          ls -lh tiles-hires.zip
+
+      - name: Create or update content release
+        run: |
+          gh release view content || gh release create content --title "Content" --prerelease
+          gh release upload content tiles-hires.zip --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

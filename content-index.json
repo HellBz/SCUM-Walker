@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tiles": [
+    {
+      "name": "Hi-Res Tiles",
+      "url": "https://github.com/HellBz/SCUM-Walker/releases/download/content/tiles-hires.zip",
+      "file": "tiles-hires.zip"
+    }
+  ],
+  "i18n": []
+}
