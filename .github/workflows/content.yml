@@ -26,6 +26,6 @@ jobs:
       - name: Create or update content release
         run: |
           gh release delete content --yes --cleanup-tag || true
-          gh release create content --title "Content" --make-latest=false --target $(git rev-parse HEAD) tiles-hires.zip
+          gh release create content --title "High-Resolution Map Tiles" --notes "High-resolution SCUM map tiles (zoom 4-6) for the SCUM Walker app." --make-latest=false --target $(git rev-parse HEAD) tiles-hires.zip
         env:
           GH_TOKEN: ${{ github.token }}
