@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - content
+    paths:
+      - tools/tiles-hires/**
   workflow_dispatch:
 
 permissions:
