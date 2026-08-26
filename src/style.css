@@ -663,6 +663,19 @@ button:hover { background: #3a3a3a; }
 }
 
 .dialog-content h3 { margin: 0 0 12px; color: #00ffcc; }
+.language-packs-content { width: 380px; padding: 16px; }
+.language-packs-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.language-packs-header h3 { margin: 0; }
+.language-packs-close { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; background: transparent; color: #aaa; border: 1px solid transparent; border-radius: 4px; }
+.language-packs-close:hover { color: #00ffcc; border-color: #00ffcc55; background: #00ffcc11; }
+.language-packs-hint { margin: 6px 0 14px; color: #999; font-size: 12px; }
+.language-packs-list { display: grid; gap: 8px; }
+.language-pack-row { display: grid; grid-template-columns: 1fr auto 104px; align-items: center; gap: 10px; min-height: 42px; padding: 8px 10px; background: #181818; border: 1px solid #333; border-radius: 5px; }
+.language-pack-name { color: #eee; font-weight: 600; }
+.language-pack-code { color: #777; font-size: 10px; text-transform: uppercase; }
+.language-pack-row button { min-width: 104px; color: #00ffcc; border-color: #00ffcc66; }
+.language-pack-row button:disabled { color: #777; border-color: #3a3a3a; }
+.language-packs-status { min-height: 16px; margin-top: 10px; color: #999; font-size: 11px; }
 
 .dialog-label {
   display: block;

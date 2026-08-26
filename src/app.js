@@ -1639,10 +1639,6 @@ function updateHiresUI() {
   if (hiresInstalled) {
     hiresStatus.textContent = I18n.t('map.hires_tiles.installed', '✓ Hi-Res Tiles installiert');
     downloadHiresBtn.style.display = 'none';
-    if (tileLayer) {
-      tileLayer.options.maxNativeZoom = MAX_ZOOM;
-      tileLayer.redraw();
-    }
   } else {
     if (hiresBtnText) hiresBtnText.textContent = I18n.t('map.hires_tiles', 'Hi-Res Tiles');
     downloadHiresBtn.disabled = false;
@@ -2316,6 +2312,11 @@ const settingsAutoPoiUseSector = document.getElementById('settingsAutoPoiUseSect
 const settingsAutoPoiCategory = document.getElementById('settingsAutoPoiCategory');
 const settingsAutoPoiPrefix = document.getElementById('settingsAutoPoiPrefix');
 const settingsLanguage = document.getElementById('settingsLanguage');
+const languagePacksBtn = document.getElementById('languagePacksBtn');
+const languagePacksDialog = document.getElementById('languagePacksDialog');
+const languagePacksList = document.getElementById('languagePacksList');
+const languagePacksStatus = document.getElementById('languagePacksStatus');
+const languagePacksClose = document.getElementById('languagePacksClose');
 const settingsSave = document.getElementById('settingsSave');
 const settingsSaveStatus = document.getElementById('settingsSaveStatus');
 
@@ -2429,6 +2430,61 @@ function toggleSettingsPanel(show) {
 if (settingsToggle && settingsPanel) settingsToggle.addEventListener('click', () => toggleSettingsPanel(!settingsPanel.classList.contains('visible')));
 if (settingsClose) settingsClose.addEventListener('click', () => toggleSettingsPanel(false));
 
+async function renderLanguagePacks() {
+  if (!languagePacksList || !languagePacksStatus) return;
+  languagePacksList.innerHTML = '';
+  languagePacksStatus.textContent = I18n.t('language_packs.loading', 'Sprachpakete werden geladen...');
+  try {
+    const packs = await invoke('list_language_packs');
+    languagePacksStatus.textContent = packs.length ? '' : I18n.t('language_packs.empty', 'Keine zusätzlichen Sprachpakete verfügbar.');
+    packs.forEach(pack => {
+      const row = document.createElement('div');
+      row.className = 'language-pack-row';
+      const name = document.createElement('span');
+      name.className = 'language-pack-name';
+      name.textContent = pack.selfName;
+      const code = document.createElement('span');
+      code.className = 'language-pack-code';
+      code.textContent = pack.code;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.code = pack.code;
+      button.dataset.name = pack.selfName;
+      button.textContent = pack.updateAvailable
+        ? I18n.t('language_packs.update', 'Aktualisieren')
+        : pack.installed
+          ? I18n.t('language_packs.installed', 'Installiert')
+          : I18n.t('language_packs.install', 'Installieren');
+      button.disabled = pack.installed && !pack.updateAvailable;
+      row.append(name, code, button);
+      languagePacksList.appendChild(row);
+    });
+  } catch (err) {
+    languagePacksStatus.textContent = I18n.t('language_packs.error', 'Fehler: {{error}}').replace('{{error}}', err);
+  }
+}
+
+if (languagePacksBtn) languagePacksBtn.addEventListener('click', async () => {
+  languagePacksDialog?.classList.add('open');
+  await renderLanguagePacks();
+});
+if (languagePacksClose) languagePacksClose.addEventListener('click', () => languagePacksDialog?.classList.remove('open'));
+if (languagePacksList) languagePacksList.addEventListener('click', async event => {
+  const button = event.target.closest('button[data-code]');
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = I18n.t('language_packs.installing', 'Wird installiert...');
+  try {
+    await invoke('install_language_pack', { code: button.dataset.code });
+    await populateLanguageSelect(settingsLanguage?.value);
+    languagePacksStatus.textContent = I18n.t('language_packs.success', '{{language}} wurde installiert.').replace('{{language}}', button.dataset.name);
+    await renderLanguagePacks();
+  } catch (err) {
+    languagePacksStatus.textContent = I18n.t('language_packs.error', 'Fehler: {{error}}').replace('{{error}}', err);
+    button.disabled = false;
+  }
+});
+
 async function populateLanguageSelect(selected) {
   if (!settingsLanguage) return;
   const languages = await I18n.list();
@@ -2514,6 +2570,9 @@ if (settingsLanguage) settingsLanguage.addEventListener('change', async () => {
   await I18n.load(settingsLanguage.value);
   updateScumStatus();
   updateHiresUI();
+  populateBackupRouteSelect();
+  populateBackupPoiCategorySelect();
+  updateUI();
 });
 
 function resetColorInput(input) {

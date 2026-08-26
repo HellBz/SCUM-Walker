@@ -17,12 +17,23 @@ window.I18n = (function() {
 
   async function load(language) {
     lang = language ? language.toLowerCase() : 'en';
+    let fallback = {};
     try {
-      const text = await window.__TAURI__.core.invoke('load_translation', { lang });
-      current = JSON.parse(text);
+      const text = await window.__TAURI__.core.invoke('load_translation', { lang: 'en' });
+      fallback = JSON.parse(text);
     } catch (err) {
-      console.warn('[i18n] Could not load', lang, err);
-      current = {};
+      console.warn('[i18n] Could not load English fallback', err);
+    }
+    if (lang === 'en') {
+      current = fallback;
+    } else {
+      try {
+        const text = await window.__TAURI__.core.invoke('load_translation', { lang });
+        current = { ...fallback, ...JSON.parse(text) };
+      } catch (err) {
+        console.warn('[i18n] Could not load', lang, err);
+        current = fallback;
+      }
     }
     apply();
     return current;

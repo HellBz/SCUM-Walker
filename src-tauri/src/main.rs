@@ -1513,7 +1513,7 @@ fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>,
             continue;
         }
         let code = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-        if code.is_empty() { continue; }
+        if code.is_empty() || code == "packages" { continue; }
         let name = if let Ok(text) = std::fs::read_to_string(&path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                 json.get("lang.self")
@@ -1530,6 +1530,71 @@ fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>,
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
+}
+
+fn language_pack_versions(handle: &tauri::AppHandle) -> serde_json::Map<String, serde_json::Value> {
+    let path = i18n_dir_path(handle).join("packages.json");
+    std::fs::read_to_string(path).ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+async fn list_language_packs(app_handle: tauri::AppHandle) -> Result<Vec<LanguagePackInfo>, String> {
+    let index = load_content_index().await.ok_or_else(|| "Sprachpaket-Liste nicht verfügbar".to_string())?;
+    let versions = language_pack_versions(&app_handle);
+    let dir = i18n_dir_path(&app_handle);
+    Ok(index.languages.into_iter().filter_map(|pack| {
+        let code = pack.code.trim().to_lowercase();
+        if code.is_empty() || code.chars().any(|c| !c.is_ascii_alphanumeric() && c != '-') || !valid_remote_url(&pack.url) {
+            return None;
+        }
+        let installed = dir.join(format!("{}.json", code)).exists();
+        let installed_version = versions.get(&code).and_then(|value| value.as_u64());
+        Some(LanguagePackInfo {
+            code,
+            self_name: pack.self_name,
+            version: pack.version,
+            installed,
+            update_available: installed_version.map(|version| version < pack.version as u64).unwrap_or(false),
+        })
+    }).collect())
+}
+
+#[tauri::command]
+async fn install_language_pack(code: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    let code = code.trim().to_lowercase();
+    if code.is_empty() || code.chars().any(|c| !c.is_ascii_alphanumeric() && c != '-') {
+        return Err("Ungültiger Sprachcode".to_string());
+    }
+    let index = load_content_index().await.ok_or_else(|| "Sprachpaket-Liste nicht verfügbar".to_string())?;
+    let pack = index.languages.into_iter().find(|pack| pack.code.eq_ignore_ascii_case(&code))
+        .ok_or_else(|| "Sprachpaket nicht gefunden".to_string())?;
+    if !valid_remote_url(&pack.url) {
+        return Err("Ungültige Sprachpaket-URL".to_string());
+    }
+    let text = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build().map_err(|e| e.to_string())?
+        .get(&pack.url)
+        .send().await.map_err(|e| format!("Download fehlgeschlagen: {}", e))?
+        .error_for_status().map_err(|e| format!("Download fehlgeschlagen: {}", e))?
+        .text().await.map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
+    let json = serde_json::from_str::<serde_json::Value>(&text).map_err(|e| format!("Ungültiges Sprachpaket: {}", e))?;
+    if json.get("lang.self").and_then(|value| value.as_str()).is_none() {
+        return Err("Sprachpaket enthält kein lang.self".to_string());
+    }
+    let dir = i18n_dir_path(&app_handle);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{}.json", code));
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    let mut versions = language_pack_versions(&app_handle);
+    versions.insert(code, serde_json::Value::from(pack.version));
+    std::fs::write(dir.join("packages.json"), serde_json::to_string_pretty(&versions).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2038,7 +2103,7 @@ fn import_full_zip_backup(state: State<Arc<AppState>>) -> Result<AppData, String
     Ok(clone)
 }
 
-const CONTENT_INDEX_URL: &str = "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/content-index.json";
+const CONTENT_INDEX_URL: &str = "https://github.com/HellBz/SCUM-Walker/raw/refs/heads/content/content-index.json";
 const HIRES_TILES_URL: &str = "https://github.com/HellBz/SCUM-Walker/releases/download/content/tiles-hires.zip";
 const UPDATE_MANIFEST_URL: &str = "https://github.com/HellBz/SCUM-Walker/releases/latest/download/latest.json";
 const LOWRES_TILES_ZIP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles-lowres.zip"));
@@ -2050,6 +2115,8 @@ struct ContentIndex {
     schema_version: u32,
     app: ContentApp,
     content: ContentPackages,
+    #[serde(default)]
+    languages: Vec<RemoteLanguagePack>,
 }
 
 #[derive(Deserialize)]
@@ -2067,6 +2134,25 @@ struct ContentPackages {
 #[derive(Deserialize)]
 struct ContentPackage {
     url: String,
+}
+
+#[derive(Deserialize)]
+struct RemoteLanguagePack {
+    code: String,
+    #[serde(rename = "self")]
+    self_name: String,
+    version: u32,
+    url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanguagePackInfo {
+    code: String,
+    self_name: String,
+    version: u32,
+    installed: bool,
+    update_available: bool,
 }
 
 async fn load_content_index() -> Option<ContentIndex> {
@@ -3015,6 +3101,8 @@ fn main() {
             save_settings,
             load_translation,
             list_languages,
+            list_language_packs,
+            install_language_pack,
             export_data,
             export_full_backup,
             export_routes_backup,

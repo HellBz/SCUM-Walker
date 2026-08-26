@@ -202,6 +202,7 @@
             <select id="settingsLanguage" style="width:100%; margin-top:6px; padding:6px; background:#222; border:1px solid #444; border-radius:4px; color:#e2e2e2;">
             </select>
           </label>
+          <button id="languagePacksBtn" type="button" style="width:100%; margin-top:8px" data-i18n="language_packs.manage">Weitere Sprachpakete</button>
         </div>
         <div class="settings-section">
           <h4 data-i18n="settings.section.backup">Backup</h4>
@@ -268,6 +269,18 @@
           <button id="settingsSave" class="primary" data-i18n="settings.save">Speichern</button>
           <span id="settingsSaveStatus" style="color:#888; font-size:12px; margin-left:8px;"></span>
         </div>
+      </div>
+    </div>
+
+    <div id="languagePacksDialog" class="dialog">
+      <div class="dialog-content language-packs-content">
+        <div class="language-packs-header">
+          <h3 data-i18n="language_packs.title">Sprachpakete</h3>
+          <button id="languagePacksClose" class="language-packs-close" type="button" data-i18n-title="settings.close" title="Schließen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg></button>
+        </div>
+        <p class="language-packs-hint" data-i18n="language_packs.hint">Zusätzliche Sprachen herunterladen oder aktualisieren.</p>
+        <div id="languagePacksList" class="language-packs-list"></div>
+        <div id="languagePacksStatus" class="language-packs-status"></div>
       </div>
     </div>
 
