@@ -4,6 +4,9 @@ src-tauri/gen/schemas
 
 # Logs
 *.log
+build_exit.txt
+scum_err.txt
+scum_out.txt
 
 # Editor files
 .vscode/
