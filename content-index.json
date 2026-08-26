@@ -11,5 +11,12 @@
       "file": "tiles-hires.zip"
     }
   },
-  "languages": []
+  "languages": [
+    {
+      "code": "zh",
+      "self": "简体中文",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/zh.json"
+    }
+  ]
 }
