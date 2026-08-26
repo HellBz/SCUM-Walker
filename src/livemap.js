@@ -346,7 +346,7 @@
   function setNavTarget(x, y) {
     navTarget = { x, y };
     RoadNavigator.setTarget(x, y);
-    showToast(`🧭 Ziel gesetzt: X=${x.toFixed(0)} Y=${y.toFixed(0)}`);
+    showToast(`🧭 Target set: X=${x.toFixed(0)} Y=${y.toFixed(0)}`);
     if (navEndEl) navEndEl.textContent = `X=${x.toFixed(0)} Y=${y.toFixed(0)}`;
     sendWs({ type: 'set-nav-target', x, y });
     if (navMode === 'nav') updateNavRoute();
@@ -482,7 +482,7 @@
 
   function calcRouteFromPoints() {
     if (!navRouteStart || !navTarget) {
-      showToast('Start und Ziel per Rechtsklick setzen.');
+      showToast('Set start and target with right-click.');
       return;
     }
     const sg = latLngToGame(navRouteStart.lat, navRouteStart.lng);
@@ -890,15 +890,15 @@
           if (longPressTriggered) { longPressTriggered = false; return; }
           if (connectedPoiIds.has(poi.id)) {
             connectedPoiIds.delete(poi.id);
-            showToast('🧭 Navigation gestoppt: ' + poi.label);
+            showToast('🧭 Navigation stopped: ' + poi.label);
           } else {
             connectedPoiIds.add(poi.id);
-            showToast('🧭 Navigation gestartet: ' + poi.label);
+            showToast('🧭 Navigation started: ' + poi.label);
           }
           renderConnectionLine();
           if (!sendWs({ type: 'set-poi-connections', ids: [...connectedPoiIds] })) {
             console.error('set-poi-connections nicht gesendet: WebSocket nicht verbunden');
-            showToast('⚠️ Verbindung konnte nicht synchronisiert werden: keine WebSocket-Verbindung');
+            showToast('⚠️ Could not sync connection: no WebSocket connection');
           }
         });
       }
@@ -1144,9 +1144,9 @@
         category,
       };
       if (sendWs({ type: 'add-poi', poi })) {
-        showToast('📍 Marker gesetzt: ' + label);
+        showToast('📍 Marker set: ' + label);
       } else {
-        showToast('⚠️ Marker konnte nicht gesendet werden: keine WebSocket-Verbindung');
+        showToast('⚠️ Could not send marker: no WebSocket connection');
       }
       bigmapHideModal();
     });
@@ -1171,9 +1171,9 @@
       if (!bigmapDeletePendingPoi) return;
       const poi = bigmapDeletePendingPoi;
       if (sendWs({ type: 'remove-poi', id: poi.id })) {
-        showToast('🗑️ Marker gelöscht: ' + (poi.label || ''));
+        showToast('🗑️ Marker deleted: ' + (poi.label || ''));
       } else {
-        showToast('⚠️ Marker konnte nicht gelöscht werden: keine WebSocket-Verbindung');
+        showToast('⚠️ Could not delete marker: no WebSocket connection');
       }
       bigmapHideDeleteModal();
     });
@@ -1292,12 +1292,12 @@
         break;
       }
       case 'poi-creating': {
-        showToast('📍 POI wird erstellt...');
+        showToast('📍 Creating POI...');
         break;
       }
       case 'poi-created': {
         const info = msgData || raw;
-        showToast('📍 POI erstellt: ' + (info.label || ''));
+        showToast('📍 POI created: ' + (info.label || ''));
         break;
       }
       case 'scum-status': {
@@ -1320,12 +1320,12 @@
           tileLayer = null;
         }
         initTileLayer(true);
-        showToast('🗺️ Hi-Res Tiles installiert!');
+        showToast('🗺️ Hi-Res Tiles installed!');
         break;
       }
       case 'tracking-state': {
         if (msgData && msgData.recording) {
-          showToast('🔴 Aufnahme gestartet');
+          showToast('🔴 Recording started');
         }
         break;
       }
@@ -1420,10 +1420,10 @@
   (async () => {
     await RoadNavigator.init();
     if (RoadNavigator.graph) {
-      showToast('🛣️ Straßennetz für Navigation geladen');
+      showToast('🛣️ Road network for navigation loaded');
       updateNavRoute();
     } else {
-      showToast('⚠️ Straßennetz für Navigation konnte nicht geladen werden');
+      showToast('⚠️ Could not load road network for navigation');
     }
   })();
 
