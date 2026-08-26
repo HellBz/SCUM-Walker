@@ -1500,7 +1500,7 @@ fn load_translation(lang: String, app_handle: tauri::AppHandle) -> Result<String
 }
 
 #[tauri::command]
-fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>, String> {
+fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String, String)>, String> {
     let dir = i18n_dir_path(&app_handle);
     let mut out = Vec::new();
     if !dir.exists() {
@@ -1514,19 +1514,18 @@ fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>,
         }
         let code = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
         if code.is_empty() || code == "packages" { continue; }
-        let name = if let Ok(text) = std::fs::read_to_string(&path) {
+        let (iso, name) = if let Ok(text) = std::fs::read_to_string(&path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                json.get("lang.self")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| code.clone())
+                let iso = json.get("lang.iso").and_then(|v| v.as_str()).unwrap_or(&code).to_lowercase();
+                let name = json.get("lang.self").and_then(|v| v.as_str()).unwrap_or(&code).to_string();
+                (iso, name)
             } else {
-                code.clone()
+                (code.clone(), code.clone())
             }
         } else {
-            code.clone()
+            (code.clone(), code.clone())
         };
-        out.push((code, name));
+        out.push((code, iso, name));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -1583,8 +1582,9 @@ async fn install_language_pack(code: String, app_handle: tauri::AppHandle) -> Re
         .error_for_status().map_err(|e| format!("Download fehlgeschlagen: {}", e))?
         .text().await.map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
     let json = serde_json::from_str::<serde_json::Value>(&text).map_err(|e| format!("Ungültiges Sprachpaket: {}", e))?;
-    if json.get("lang.self").and_then(|value| value.as_str()).is_none() {
-        return Err("Sprachpaket enthält kein lang.self".to_string());
+    if json.get("lang.self").and_then(|value| value.as_str()).is_none()
+        || json.get("lang.iso").and_then(|value| value.as_str()).is_none() {
+        return Err("Sprachpaket enthält kein lang.self oder lang.iso".to_string());
     }
     let dir = i18n_dir_path(&app_handle);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

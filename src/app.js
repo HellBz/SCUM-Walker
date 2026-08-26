@@ -2489,10 +2489,10 @@ async function populateLanguageSelect(selected) {
   if (!settingsLanguage) return;
   const languages = await I18n.list();
   settingsLanguage.innerHTML = '';
-  languages.forEach(([code, name]) => {
+  languages.forEach(([code, iso, name]) => {
     const opt = document.createElement('option');
     opt.value = code;
-    opt.textContent = name;
+    opt.textContent = `${iso.toUpperCase()} – ${name}`;
     settingsLanguage.appendChild(opt);
   });
   if (selected && [...settingsLanguage.options].some(o => o.value === selected)) {
