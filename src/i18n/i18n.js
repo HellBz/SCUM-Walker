@@ -6,6 +6,15 @@ window.I18n = (function() {
     return path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : undefined), obj);
   }
 
+  async function list() {
+    try {
+      return await window.__TAURI__.core.invoke('list_languages');
+    } catch (err) {
+      console.warn('[i18n] Could not list languages', err);
+      return [];
+    }
+  }
+
   async function load(language) {
     lang = language ? language.toLowerCase() : 'en';
     try {
@@ -50,5 +59,5 @@ window.I18n = (function() {
     });
   }
 
-  return { load, t, apply, get lang() { return lang; } };
+  return { load, t, apply, list, get lang() { return lang; } };
 })();

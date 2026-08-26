@@ -49,7 +49,8 @@ let worldHeight = worldMaxY - worldMinY;
 // Tile system: 256px tiles, zoom 0-6. Image upscaled to 16384x16384 (no padding).
 // Zoom 0-3 bundled, 4-6 via download. maxNativeZoom adjusts dynamically.
 const MAP_UNITS = 256;
-const MAX_ZOOM = 6;
+const MAX_ZOOM = 6;              // highest native tile zoom (4-6 via hi-res download)
+const MAP_MAX_ZOOM = 8;          // allow over-zooming; tiles above MAX_ZOOM are upscaled
 const MIN_ZOOM = 0;
 const BUNDLED_MAX_ZOOM = 3;
 
@@ -138,7 +139,7 @@ function populatePoiCategorySelect(current, fallback) {
   });
   const neuOpt = document.createElement('option');
   neuOpt.value = '__new__';
-  neuOpt.textContent = 'Neue Kategorie...';
+  neuOpt.textContent = I18n.t('poi.new_category', 'Neue Kategorie...');
   poiCategorySelect.appendChild(neuOpt);
   if ((current || fallback) && !cats.includes(current || fallback)) {
     poiCategorySelect.value = '__new__';
@@ -175,7 +176,7 @@ const customCRS = L.extend({}, L.CRS.Simple, {
 const map = L.map('map', {
   crs: customCRS,
   minZoom: MIN_ZOOM,
-  maxZoom: MAX_ZOOM,
+  maxZoom: MAP_MAX_ZOOM,
   zoomSnap: 0,
   zoomDelta: 0.25,
   wheelPxPerZoomLevel: 60,
@@ -193,16 +194,13 @@ async function initTileLayer() {
     const installed = await invoke('check_hires_tiles');
     if (installed) {
       maxNative = MAX_ZOOM;
-      if (downloadHiresBtn) {
-        downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
-        downloadHiresBtn.disabled = true;
-      }
-      if (hiresStatus) hiresStatus.textContent = '✓ Hi-Res Tiles installiert';
+      if (downloadHiresBtn) downloadHiresBtn.style.display = 'none';
+      if (hiresStatus) hiresStatus.textContent = I18n.t('map.hires_tiles.installed', '✓ Hi-Res Tiles installiert');
     }
   } catch {}
   tileLayer = L.tileLayer(tileBaseUrl + '/tiles/{z}/{x}/{y}.png', {
     minZoom: MIN_ZOOM,
-    maxZoom: MAX_ZOOM,
+    maxZoom: MAP_MAX_ZOOM,
     maxNativeZoom: maxNative,
     tileSize: 256,
     noWrap: true,
@@ -241,7 +239,7 @@ const mapClusterToggle = document.getElementById('mapClusterToggle');
 function updateMapZoomLabel() {
   if (mapZoomLabel) {
     const z = map.getZoom();
-    mapZoomLabel.textContent = Math.round(Math.pow(2, z) * 100) + '%';
+    mapZoomLabel.textContent = Math.round(z) + '/' + map.getMaxZoom();
   }
 }
 updateMapZoomLabel();
@@ -992,7 +990,7 @@ function renderPoiList() {
   const savedFilter = poiCategoryFilter ? poiCategoryFilter.value : '';
   const categories = getPoiCategories();
   if (poiCategoryFilter) {
-    poiCategoryFilter.innerHTML = '<option value="">Alle Kategorien</option>';
+    poiCategoryFilter.innerHTML = '<option value="">' + I18n.t('poi.all_categories', 'Alle Kategorien') + '</option>';
     categories.forEach(cat => {
       const opt = document.createElement('option');
       opt.value = cat;
@@ -1115,7 +1113,7 @@ function renderPoiList() {
       editingPoiId = poi.id;
       pendingPoi = null;
       selectedPoiColor = poi.color;
-      poiDialogTitle.textContent = 'POI bearbeiten';
+      poiDialogTitle.textContent = I18n.t('poi.edit_title', 'POI bearbeiten');
       poiLabelInput.value = poi.label;
       poiColorPicker.value = selectedPoiColor;
       populatePoiCategorySelect(poi.category, '');
@@ -1240,7 +1238,7 @@ function openPoiDialogForPoint(latlng) {
   const game = latLngToGame(latlng.lat, latlng.lng);
   pendingPoi = game;
   editingPoiId = null;
-  poiDialogTitle.textContent = 'POI hinzufügen';
+  poiDialogTitle.textContent = I18n.t('poi.add_title', 'POI hinzufügen');
   poiLabelInput.value = '';
   poiColorPicker.value = selectedPoiColor;
   populatePoiCategorySelect('', getSector(game.x, game.y));
@@ -1338,7 +1336,7 @@ document.getElementById('addPoiFromLocation').addEventListener('click', async ()
     const record = await invoke('get_current_location');
     pendingPoi = { x: record.x, y: record.y };
     editingPoiId = null;
-    poiDialogTitle.textContent = 'POI hinzufügen';
+    poiDialogTitle.textContent = I18n.t('poi.add_title', 'POI hinzufügen');
     poiLabelInput.value = '';
     poiColorPicker.value = selectedPoiColor;
     populatePoiCategorySelect('', getSector(record.x, record.y));
@@ -1461,7 +1459,7 @@ document.getElementById('clipboardParse').addEventListener('click', async () => 
   clipboardDialog.classList.remove('open');
   pendingPoi = { x: poiData.x, y: poiData.y };
   editingPoiId = null;
-  poiDialogTitle.textContent = 'POI Import';
+  poiDialogTitle.textContent = I18n.t('poi.import_dialog_title', 'POI Import');
   poiLabelInput.value = poiData.label;
   selectedPoiColor = poiData.color;
   poiColorPicker.value = poiData.color;
@@ -1516,7 +1514,7 @@ async function syncLiveTrackingState() {
     isLiveTracking = false;
   }
   if (liveTrackingBtn) {
-    liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
+    liveTrackingBtn.textContent = isLiveTracking ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen') : I18n.t('live_tracking.start', 'Live-Tracking starten');
   }
 }
 
@@ -1524,7 +1522,7 @@ if (window.__TAURI__.event) {
   window.__TAURI__.event.listen('live-tracking-state', (e) => {
     isLiveTracking = !!e.payload;
     if (liveTrackingBtn) {
-      liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
+      liveTrackingBtn.textContent = isLiveTracking ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen') : I18n.t('live_tracking.start', 'Live-Tracking starten');
     }
   });
 }
@@ -1532,19 +1530,19 @@ if (window.__TAURI__.event) {
 liveTrackingBtn.addEventListener('click', async () => {
   try {
     isLiveTracking = await invoke('toggle_live_tracking');
-    liveTrackingBtn.textContent = isLiveTracking ? 'Live-Tracking stoppen' : 'Live-Tracking starten';
+    liveTrackingBtn.textContent = isLiveTracking ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen') : I18n.t('live_tracking.start', 'Live-Tracking starten');
     if (isLiveTracking) {
       await checkScumStatus();
       if (scumRunning) {
-        statusEl.textContent = 'Live-Tracking aktiv';
+        statusEl.textContent = I18n.t('status.live_tracking_active', 'Live-Tracking aktiv');
       } else {
-        statusEl.textContent = 'Live-Tracking aktiv – aber SCUM nicht gestartet';
+        statusEl.textContent = I18n.t('status.live_tracking_active_no_scum', 'Live-Tracking aktiv – aber SCUM nicht gestartet');
       }
     } else {
-      statusEl.textContent = 'Live-Tracking pausiert';
+      statusEl.textContent = I18n.t('status.live_tracking_paused', 'Live-Tracking pausiert');
     }
   } catch (err) {
-    statusEl.textContent = 'Live-Tracking: ' + err;
+    statusEl.textContent = I18n.t('status.live_tracking_error', 'Live-Tracking: {{error}}').replace('{{error}}', err);
   }
 });
 
@@ -1553,36 +1551,36 @@ const overlayBtn = document.getElementById('openOverlay');
 overlayBtn.addEventListener('click', async () => {
   try {
     await invoke('open_overlay');
-    statusEl.textContent = 'Overlay geöffnet';
+    statusEl.textContent = I18n.t('status.overlay_opened', 'Overlay geöffnet');
   } catch (err) {
-    statusEl.textContent = 'Overlay: ' + err;
+    statusEl.textContent = I18n.t('status.overlay_error', 'Overlay: {{error}}').replace('{{error}}', err);
   }
 });
 
 document.getElementById('closeOverlay').addEventListener('click', async () => {
   try {
     await invoke('close_overlay');
-    statusEl.textContent = 'Overlay geschlossen';
+    statusEl.textContent = I18n.t('status.overlay_closed', 'Overlay geschlossen');
   } catch (err) {
-    statusEl.textContent = 'Overlay: ' + err;
+    statusEl.textContent = I18n.t('status.overlay_close_error', 'Overlay: {{error}}').replace('{{error}}', err);
   }
 });
 
 document.getElementById('copyLivemapUrl').addEventListener('click', async () => {
   try {
     await invoke('copy_livemap_url');
-    statusEl.textContent = 'Live-Map-URL kopiert';
+    statusEl.textContent = I18n.t('status.url_copied', 'Live-Map-URL kopiert');
   } catch (err) {
-    statusEl.textContent = 'URL: ' + err;
+    statusEl.textContent = I18n.t('status.url_error', 'URL: {{error}}').replace('{{error}}', err);
   }
 });
 
 document.getElementById('resetOverlayPosition').addEventListener('click', async () => {
   try {
     await invoke('reset_overlay_config');
-    statusEl.textContent = 'Overlay-Position zurückgesetzt (neu öffnen, um zu sehen)';
+    statusEl.textContent = I18n.t('status.overlay_reset', 'Overlay-Position zurückgesetzt (neu öffnen, um zu sehen)');
   } catch (err) {
-    statusEl.textContent = 'Overlay-Reset: ' + err;
+    statusEl.textContent = I18n.t('status.overlay_reset_error', 'Overlay-Reset: {{error}}').replace('{{error}}', err);
   }
 });
 
@@ -1594,7 +1592,7 @@ function updateOverlayLockUI() {
   lockOverlayBtn.innerHTML = overlayLocked
     ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
     : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
-  lockOverlayBtn.title = overlayLocked ? 'Overlay entsperren' : 'Overlay sperren / Klick-durch';
+  lockOverlayBtn.title = overlayLocked ? I18n.t('overlay.unlock', 'Overlay entsperren') : I18n.t('overlay.lock', 'Overlay sperren / Klick-durch');
   lockOverlayBtn.classList.toggle('locked', overlayLocked);
   lockOverlayBtn.classList.toggle('unlocked', !overlayLocked);
 }
@@ -1604,9 +1602,9 @@ lockOverlayBtn.addEventListener('click', async () => {
     overlayLocked = !overlayLocked;
     await invoke('set_overlay_clickthrough', { clickthrough: overlayLocked });
     updateOverlayLockUI();
-    statusEl.textContent = overlayLocked ? 'Overlay gesperrt (Klick-durch)' : 'Overlay entsperrt';
+    statusEl.textContent = overlayLocked ? I18n.t('status.overlay_locked', 'Overlay gesperrt (Klick-durch)') : I18n.t('status.overlay_unlocked', 'Overlay entsperrt');
   } catch (err) {
-    statusEl.textContent = 'Overlay-Lock: ' + err;
+    statusEl.textContent = I18n.t('status.overlay_lock_error', 'Overlay-Lock: {{error}}').replace('{{error}}', err);
   }
 });
 
@@ -1614,12 +1612,13 @@ if (toggleCoordsBtn) {
   toggleCoordsBtn.addEventListener('click', () => {
     showCoords = !showCoords;
     toggleCoordsBtn.classList.toggle('active', showCoords);
-    statusEl.textContent = showCoords ? (currentCoord ? `Letzte Koordinate: X=${currentCoord.x.toFixed(0)} Y=${currentCoord.y.toFixed(0)}` : 'Bereit') : 'Koordinaten ausgeblendet';
+    statusEl.textContent = showCoords ? (currentCoord ? I18n.t('status.coordinates_last', 'Letzte Koordinate: X={{x}} Y={{y}}').replace('{{x}}', currentCoord.x.toFixed(0)).replace('{{y}}', currentCoord.y.toFixed(0)) : I18n.t('status.ready', 'Bereit')) : I18n.t('status.coordinates_hidden', 'Koordinaten ausgeblendet');
   });
 }
 
 // Hi-Res Tiles Download
 const downloadHiresBtn = document.getElementById('downloadHiresBtn');
+const hiresBtnText = document.getElementById('hiresBtnText');
 const hiresStatus = document.getElementById('hiresStatus');
 const hiresProgressBar = document.getElementById('hiresProgressBar');
 const hiresProgressFill = document.getElementById('hiresProgressFill');
@@ -1634,41 +1633,47 @@ function hideHiresProgress() {
   hiresProgressFill.style.width = '0%';
 }
 
+let hiresInstalled = false;
+function updateHiresUI() {
+  if (!downloadHiresBtn || !hiresStatus) return;
+  if (hiresInstalled) {
+    hiresStatus.textContent = I18n.t('map.hires_tiles.installed', '✓ Hi-Res Tiles installiert');
+    downloadHiresBtn.style.display = 'none';
+    if (tileLayer) {
+      tileLayer.options.maxNativeZoom = MAX_ZOOM;
+      tileLayer.redraw();
+    }
+  } else {
+    if (hiresBtnText) hiresBtnText.textContent = I18n.t('map.hires_tiles', 'Hi-Res Tiles');
+    downloadHiresBtn.disabled = false;
+    downloadHiresBtn.style.display = '';
+    hiresStatus.textContent = I18n.t('map.hires_tiles.not_installed', 'Nur Zoom 0-3 verfügbar. Hi-Res für Zoom 4-6.');
+  }
+}
 async function checkHiresTiles() {
   try {
-    const installed = await invoke('check_hires_tiles');
-    if (installed) {
-      hiresStatus.textContent = '✓ Hi-Res Tiles installiert';
-      downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
-      downloadHiresBtn.disabled = true;
-      if (tileLayer) {
-        tileLayer.options.maxNativeZoom = MAX_ZOOM;
-        tileLayer.redraw();
-      }
-    } else {
-      hiresStatus.textContent = 'Nur Zoom 0-3 verfügbar. Hi-Res für Zoom 4-6.';
-    }
+    hiresInstalled = await invoke('check_hires_tiles');
+    updateHiresUI();
   } catch {}
 }
-checkHiresTiles();
 
 downloadHiresBtn.addEventListener('click', async () => {
   downloadHiresBtn.disabled = true;
-  downloadHiresBtn.textContent = 'Lädt...';
+  if (hiresBtnText) hiresBtnText.textContent = I18n.t('map.hires_tiles.loading', 'Lädt...');
   setHiresProgress(0);
   try {
     await invoke('download_hires_tiles');
   } catch (err) {
-    hiresStatus.textContent = 'Fehler: ' + err;
+    hiresStatus.textContent = I18n.t('map.hires_tiles.error', 'Fehler: {{error}}').replace('{{error}}', err);
     hideHiresProgress();
     downloadHiresBtn.disabled = false;
-    downloadHiresBtn.textContent = '⬇ Hi-Res Tiles';
+    if (hiresBtnText) hiresBtnText.textContent = I18n.t('map.hires_tiles', 'Hi-Res Tiles');
   }
 });
 
 window.__TAURI__.event.listen('hires-download-progress', (event) => {
   const { phase, percent, text } = event.payload;
-  hiresStatus.textContent = text;
+  hiresStatus.textContent = I18n.t('hires.' + phase, text);
   if (phase === 'download') {
     // Download is roughly the first half of the overall progress, extraction the second half.
     setHiresProgress(percent / 2);
@@ -1680,9 +1685,10 @@ window.__TAURI__.event.listen('hires-download-progress', (event) => {
 });
 
 window.__TAURI__.event.listen('hires-tiles-installed', () => {
-  hiresStatus.textContent = '✓ Hi-Res Tiles installiert! Karte neu laden für volle Auflösung.';
+  hiresInstalled = true;
+  hiresStatus.textContent = I18n.t('map.hires_tiles.installed_reload', '✓ Hi-Res Tiles installiert! Karte neu laden für volle Auflösung.');
   hideHiresProgress();
-  downloadHiresBtn.textContent = '✓ Hi-Res Tiles (installiert)';
+  if (downloadHiresBtn) downloadHiresBtn.style.display = 'none';
   if (tileLayer) {
     tileLayer.options.maxNativeZoom = MAX_ZOOM;
     tileLayer.redraw();
@@ -1702,10 +1708,10 @@ function updateScumStatus() {
   const scumStatusEl = document.getElementById('scumStatus');
   if (!scumStatusEl) return;
   if (scumRunning) {
-    scumStatusEl.textContent = 'SCUM läuft';
+    scumStatusEl.textContent = I18n.t('status.scum_running', 'SCUM läuft');
     scumStatusEl.className = 'scum-status running';
   } else {
-    scumStatusEl.textContent = 'SCUM nicht gestartet';
+    scumStatusEl.textContent = I18n.t('status.scum_not_running', 'SCUM nicht gestartet');
     scumStatusEl.className = 'scum-status not-running';
   }
 }
@@ -2032,7 +2038,7 @@ function enterNavMode(mode) {
     navModeRoute.classList.toggle('active', navMode === 'route');
   }
   if (navStartRow) navStartRow.classList.toggle('hidden', navMode !== 'route');
-  if (navCalcBtn) navCalcBtn.textContent = navMode === 'route' ? 'Route berechnen' : 'Route neu berechnen';
+  if (navCalcBtn) navCalcBtn.textContent = navMode === 'route' ? I18n.t('nav.calculate', 'Route berechnen') : I18n.t('nav.recalculate', 'Route neu berechnen');
   if (navPanel) navPanel.classList.toggle('visible', navVisible);
   updateNavButtonStates();
 }
@@ -2054,7 +2060,7 @@ if (navModeRoute) {
     if (navModeRoute) navModeRoute.classList.add('active');
     if (navModeNav) navModeNav.classList.remove('active');
     if (navStartRow) navStartRow.classList.remove('hidden');
-    if (navCalcBtn) navCalcBtn.textContent = 'Route berechnen';
+    if (navCalcBtn) navCalcBtn.textContent = I18n.t('nav.calculate', 'Route berechnen');
     updateNavButtonStates();
     clearNavRoute();
   });
@@ -2066,7 +2072,7 @@ if (navModeNav) {
     if (navModeNav) navModeNav.classList.add('active');
     if (navModeRoute) navModeRoute.classList.remove('active');
     if (navStartRow) navStartRow.classList.add('hidden');
-    if (navCalcBtn) navCalcBtn.textContent = 'Route neu berechnen';
+    if (navCalcBtn) navCalcBtn.textContent = I18n.t('nav.recalculate', 'Route neu berechnen');
     updateNavButtonStates();
     clearNavRoute();
   });
@@ -2123,13 +2129,16 @@ function updateNavProgress() {
   const remKm = (remainingDist / 100000).toFixed(2);
   const totalKm = (navTotalDist / 100000).toFixed(2);
   const pct = navTotalDist > 0 ? Math.round((1 - remainingDist / navTotalDist) * 100) : 0;
-  navProgressEl.innerHTML = `Fortschritt: <span class="done">${pct}%</span> · Rest: <span class="dist">${remKm} km</span> / ${totalKm} km`;
+  navProgressEl.innerHTML = I18n.t('nav.progress', 'Fortschritt: <span class="done">{{pct}}%</span> · Rest: <span class="dist">{{remKm}} km</span> / {{totalKm}} km')
+    .replace('{{pct}}', pct)
+    .replace('{{remKm}}', remKm)
+    .replace('{{totalKm}}', totalKm);
 }
 
 function drawNavRoute(route) {
   if (!route || route.length < 2) {
     if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
-    if (navInfoEl) navInfoEl.innerHTML = '<span style="color:#e45858">Keine Route gefunden!</span>';
+    if (navInfoEl) navInfoEl.innerHTML = I18n.t('nav.no_route', '<span style="color:#e45858">Keine Route gefunden!</span>');
     return;
   }
   const latlngs = route.map(r => gameToLatLng(r.x, r.y));
@@ -2154,7 +2163,7 @@ function drawNavRoute(route) {
   }
   navTotalDist = totalDist;
   const km = (totalDist / 100000).toFixed(2);
-  if (navInfoEl) navInfoEl.innerHTML = `Route: ca. <span class="dist">${km} km</span>`;
+  if (navInfoEl) navInfoEl.innerHTML = I18n.t('nav.route_distance', 'Route: ca. <span class="dist">{{km}} km</span>').replace('{{km}}', km);
   updateNavProgress();
 }
 
@@ -2172,7 +2181,7 @@ function trimNavRoute() {
   if (bestIdx === navRemaining.length - 1) {
     if (navLayer) { map.removeLayer(navLayer); navLayer = null; }
     navRemaining = null;
-    if (navProgressEl) navProgressEl.innerHTML = '<span class="done">Ziel erreicht!</span>';
+    if (navProgressEl) navProgressEl.innerHTML = I18n.t('nav.goal_reached', '<span class="done">Ziel erreicht!</span>');
     return;
   }
   navRemaining = navRemaining.slice(bestIdx);
@@ -2284,8 +2293,8 @@ function clearNavRoute(fromRemote) {
   navRouteStart = null;
   navRemaining = null;
   navTotalDist = 0;
-  if (navStartEl) navStartEl.textContent = '– Rechtsklick setzen';
-  if (navEndEl) navEndEl.textContent = '– Rechtsklick setzen';
+  if (navStartEl) navStartEl.textContent = I18n.t('nav.start_hint', '– Rechtsklick setzen');
+  if (navEndEl) navEndEl.textContent = I18n.t('nav.end_hint', '– Rechtsklick setzen');
   if (navInfoEl) navInfoEl.innerHTML = '';
   if (navProgressEl) navProgressEl.innerHTML = '';
   if (!fromRemote) invoke('clear_nav_target');
@@ -2384,7 +2393,7 @@ function validateHotkeys() {
   if (settingsSave) settingsSave.disabled = hasDuplicate;
   if (settingsSaveStatus) {
     settingsSaveStatus.textContent = hasDuplicate
-      ? `Hotkey "${duplicateValue}" ist mehrfach vergeben`
+      ? I18n.t('settings.hotkey_duplicate', 'Hotkey "{{value}}" ist mehrfach vergeben').replace('{{value}}', duplicateValue)
       : '';
   }
 }
@@ -2420,6 +2429,23 @@ function toggleSettingsPanel(show) {
 if (settingsToggle && settingsPanel) settingsToggle.addEventListener('click', () => toggleSettingsPanel(!settingsPanel.classList.contains('visible')));
 if (settingsClose) settingsClose.addEventListener('click', () => toggleSettingsPanel(false));
 
+async function populateLanguageSelect(selected) {
+  if (!settingsLanguage) return;
+  const languages = await I18n.list();
+  settingsLanguage.innerHTML = '';
+  languages.forEach(([code, name]) => {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = name;
+    settingsLanguage.appendChild(opt);
+  });
+  if (selected && [...settingsLanguage.options].some(o => o.value === selected)) {
+    settingsLanguage.value = selected;
+  } else if (settingsLanguage.options.length > 0) {
+    settingsLanguage.value = settingsLanguage.options[0].value;
+  }
+}
+
 async function loadSettings() {
   try {
     const s = await invoke('get_settings');
@@ -2438,8 +2464,9 @@ async function loadSettings() {
     if (settingsAutoPoiUseSector) settingsAutoPoiUseSector.checked = s.auto_poi_use_sector_category;
     if (settingsAutoPoiCategory) settingsAutoPoiCategory.value = s.auto_poi_category || '';
     if (settingsAutoPoiPrefix) settingsAutoPoiPrefix.value = s.auto_poi_name_prefix;
-    if (settingsLanguage) settingsLanguage.value = s.language || 'de';
+    await populateLanguageSelect(s.language || 'de');
     await I18n.load(s.language || 'de');
+    await checkHiresTiles();
     trackingInterval = s.tracking_interval || 10;
     updateMarkerTransition();
     validateHotkeys();
@@ -2473,7 +2500,7 @@ async function saveSettings() {
     navRouteColor = saved.nav_route_color;
     if (navLayer) updateNavRoute();
     if (settingsSaveStatus) {
-      settingsSaveStatus.textContent = 'Gespeichert';
+      settingsSaveStatus.textContent = I18n.t('settings.saved', 'Gespeichert');
       setTimeout(() => { settingsSaveStatus.textContent = ''; }, 2000);
     }
   } catch (err) {
@@ -2483,7 +2510,10 @@ async function saveSettings() {
   }
 }
 if (settingsSave) settingsSave.addEventListener('click', saveSettings);
-if (settingsLanguage) settingsLanguage.addEventListener('change', () => I18n.load(settingsLanguage.value));
+if (settingsLanguage) settingsLanguage.addEventListener('change', async () => {
+  await I18n.load(settingsLanguage.value);
+  updateHiresUI();
+});
 
 function resetColorInput(input) {
   if (!input) return;
@@ -2509,7 +2539,7 @@ async function runBackupAction(command, successText, args) {
   } catch (err) {
     const msg = err?.toString?.() || String(err);
     if (msg !== 'Export abgebrochen' && msg !== 'Import abgebrochen') {
-      setBackupStatus('Fehler: ' + msg, true);
+      setBackupStatus(I18n.t('status.error', 'Fehler: {{error}}').replace('{{error}}', msg), true);
     }
     return;
   }
@@ -2523,7 +2553,7 @@ function populateBackupPoiCategorySelect() {
   if (!backupPoiCategorySelect) return;
   const savedValue = backupPoiCategorySelect.value;
   const categories = getPoiCategories();
-  backupPoiCategorySelect.innerHTML = '<option value="">Alle Kategorien</option>';
+  backupPoiCategorySelect.innerHTML = '<option value="">' + I18n.t('settings.backup.all_categories', 'Alle Kategorien') + '</option>';
   categories.forEach(cat => {
     const opt = document.createElement('option');
     opt.value = cat;
@@ -2536,7 +2566,7 @@ function populateBackupPoiCategorySelect() {
 function populateBackupRouteSelect() {
   if (!backupRouteSelect) return;
   const savedValue = backupRouteSelect.value;
-  backupRouteSelect.innerHTML = '<option value="">Alle Routen</option>';
+  backupRouteSelect.innerHTML = '<option value="">' + I18n.t('settings.backup.all_routes', 'Alle Routen') + '</option>';
   (data.routes || []).forEach(route => {
     const opt = document.createElement('option');
     opt.value = route.id;
@@ -2548,34 +2578,34 @@ function populateBackupRouteSelect() {
 
 document.getElementById('backupExportRoutes')?.addEventListener('click', () => {
   const routeId = backupRouteSelect?.value || null;
-  let successText = routeId ? 'Ausgewählte Route exportiert.' : 'Alle Routen exportiert.';
+  const successText = routeId ? I18n.t('status.selected_route_exported', 'Ausgewählte Route exportiert.') : I18n.t('status.all_routes_exported', 'Alle Routen exportiert.');
   runBackupAction('export_routes_backup', successText, { routeId });
 });
 document.getElementById('backupExportPois')?.addEventListener('click', () => {
   const category = backupPoiCategorySelect?.value || null;
   const includeImages = document.getElementById('backupPoiIncludeImages')?.checked ?? false;
-  let successText = category ? `POIs der Kategorie "${category}" exportiert.` : 'POIs exportiert.';
-  if (includeImages) successText += ' (inkl. Bilder als ZIP)';
+  let successText = category ? I18n.t('status.pois_category_exported', 'POIs der Kategorie "{{category}}" exportiert.').replace('{{category}}', category) : I18n.t('status.pois_exported', 'POIs exportiert.');
+  if (includeImages) successText += I18n.t('status.with_images_suffix', ' (inkl. Bilder als ZIP)');
   runBackupAction('export_pois_backup', successText, { category, includeImages });
 });
-document.getElementById('backupExportSettings')?.addEventListener('click', () => runBackupAction('export_settings_backup', 'Einstellungen exportiert.'));
+document.getElementById('backupExportSettings')?.addEventListener('click', () => runBackupAction('export_settings_backup', I18n.t('status.settings_exported', 'Einstellungen exportiert.')));
 
 document.getElementById('backupExportApp')?.addEventListener('click', () => {
   const includeImages = document.getElementById('backupAppIncludeImages')?.checked ?? false;
-  const successText = includeImages ? 'App-Backup (inkl. Bilder) exportiert.' : 'App-Backup exportiert.';
+  const successText = includeImages ? I18n.t('status.app_backup_with_images_exported', 'App-Backup (inkl. Bilder) exportiert.') : I18n.t('status.app_backup_exported', 'App-Backup exportiert.');
   runBackupAction('export_full_zip_backup', successText, { includeImages });
 });
 
 document.getElementById('backupImportApp')?.addEventListener('click', async () => {
-  if (!confirm('App-Backup importieren? Dabei werden alle aktuellen Routen, POIs und Einstellungen ersetzt.')) return;
-  await runBackupAction('import_full_zip_backup', 'App-Backup importiert.');
+  if (!confirm(I18n.t('settings.backup.import_app_confirm', 'App-Backup importieren? Dabei werden alle aktuellen Routen, POIs und Einstellungen ersetzt.'))) return;
+  await runBackupAction('import_full_zip_backup', I18n.t('status.app_backup_imported', 'App-Backup importiert.'));
   await loadSettings();
 });
 
-document.getElementById('backupImportRoutes')?.addEventListener('click', () => runBackupAction('import_routes_backup', 'Routen importiert.'));
-document.getElementById('backupImportPois')?.addEventListener('click', () => runBackupAction('import_pois_backup', 'POIs importiert.'));
+document.getElementById('backupImportRoutes')?.addEventListener('click', () => runBackupAction('import_routes_backup', I18n.t('status.routes_imported', 'Routen importiert.')));
+document.getElementById('backupImportPois')?.addEventListener('click', () => runBackupAction('import_pois_backup', I18n.t('status.pois_imported', 'POIs importiert.')));
 document.getElementById('backupImportSettings')?.addEventListener('click', async () => {
-  await runBackupAction('import_settings_backup', 'Einstellungen importiert.');
+  await runBackupAction('import_settings_backup', I18n.t('status.settings_imported', 'Einstellungen importiert.'));
   await loadSettings();
 });
 

@@ -1473,12 +1473,10 @@ fn init_local_i18n_files(handle: &tauri::AppHandle) {
     let files = [("de.json", BUNDLE_I18N_DE), ("en.json", BUNDLE_I18N_EN)];
     for (name, content) in files {
         let path = dir.join(name);
-        if !path.exists() {
-            if let Err(e) = std::fs::write(&path, content) {
-                eprintln!("[i18n] FEHLER: Konnte {} nicht schreiben: {}", path.display(), e);
-            } else {
-                eprintln!("[i18n] Initial erstellt: {}", path.display());
-            }
+        if let Err(e) = std::fs::write(&path, content) {
+            eprintln!("[i18n] FEHLER: Konnte {} nicht schreiben: {}", path.display(), e);
+        } else {
+            eprintln!("[i18n] Aktualisiert: {}", path.display());
         }
     }
 }
@@ -1499,6 +1497,41 @@ fn load_translation(lang: String, app_handle: tauri::AppHandle) -> Result<String
         "en" => Ok(BUNDLE_I18N_EN.to_string()),
         _ => Err(format!("Übersetzung nicht verfügbar: {}", lang)),
     }
+}
+
+#[tauri::command]
+fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>, String> {
+    let dir = i18n_dir_path(&app_handle);
+    let mut out = Vec::new();
+    if !dir.exists() {
+        return Ok(out);
+    }
+    let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let code = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+        if code.is_empty() { continue; }
+        let name = if let Ok(text) = std::fs::read_to_string(&path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                let self_key = format!("lang.{}", code);
+                json.get(&self_key)
+                    .or_else(|| json.get("lang.self"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| code.clone())
+            } else {
+                code.clone()
+            }
+        } else {
+            code.clone()
+        };
+        out.push((code, name));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
 }
 
 #[tauri::command]
@@ -2007,7 +2040,7 @@ fn import_full_zip_backup(state: State<Arc<AppState>>) -> Result<AppData, String
     Ok(clone)
 }
 
-const HIRES_TILES_URL: &str = "https://github.com/HellBz/Scum-Walker/releases/latest/download/tiles-hires.zip";
+const HIRES_TILES_URL: &str = "https://github.com/HellBz/SCUM-Walker/releases/download/content/tiles-hires.zip";
 const LOWRES_TILES_ZIP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles-lowres.zip"));
 const GITHUB_LATEST_RELEASE_URL: &str = "https://api.github.com/repos/HellBz/SCUM-Walker/releases/latest";
 
@@ -2917,6 +2950,7 @@ fn main() {
             get_settings,
             save_settings,
             load_translation,
+            list_languages,
             export_data,
             export_full_backup,
             export_routes_backup,

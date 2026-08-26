@@ -14,47 +14,47 @@
 <body>
   <div id="sidebar">
     <div class="sidebar-title">
-      <span class="brand">SCUM Walker</span>
+      <span class="brand" data-i18n="app.title">SCUM Walker</span>
       <span id="versionBadge" class="version-badge">v0.7.8</span>
-      <a id="updateLink" class="update-link" href="#" style="display:none">Update verfügbar</a>
+      <a id="updateLink" class="update-link" href="#" style="display:none" data-i18n="update.available">Update verfügbar</a>
     </div>
 
     <div class="status-row">
-      <div id="status">Bereit</div>
+      <div id="status" data-i18n="status.ready">Bereit</div>
       <button id="toggleCoordsBtn" class="icon-btn active" title="X/Y Koordinaten anzeigen/ausblenden">XY</button>
     </div>
     <div class="scum-status-row">
-      <div id="scumStatus" class="scum-status running">SCUM läuft</div>
+      <div id="scumStatus" class="scum-status running" data-i18n="status.scum_running">SCUM läuft</div>
       <button id="scumWindowPickerBtn" class="icon-btn" title="SCUM-Fenster manuell wählen (Debug)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg></button>
     </div>
     <div id="toast" class="toast"></div>
 
     <div class="section">
       <div class="section-header collapsible" id="livemapSectionHeader">
-        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span> Live-Map / Overlay</h3>
+        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span> <span data-i18n="sidebar.livemap">Live-Map / Overlay</span></h3>
       </div>
       <div id="livemapSectionBody">
       <div class="button-row">
-        <button id="toggleLiveTracking" style="width:100%">Live-Tracking starten</button>
+        <button id="toggleLiveTracking" style="width:100%" data-i18n="live_tracking.start">Live-Tracking starten</button>
       </div>
       <div class="button-row">
-        <button id="openOverlay" title="Overlay öffnen">Overlay öffnen</button>
+        <button id="openOverlay" data-i18n="overlay.open" data-i18n-title="overlay.open" title="Overlay öffnen">Overlay öffnen</button>
       </div>
       <div style="height:6px"></div>
       <div class="button-row overlay-actions">
-        <button id="lockOverlay" class="unlocked" title="Overlay sperren / Klick-durch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg></button>
-        <button id="closeOverlay" title="Overlay schließen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        <button id="resetOverlayPosition" title="Overlay-Position zurücksetzen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <button id="lockOverlay" class="unlocked" data-i18n-title="overlay.lock" title="Overlay sperren / Klick-durch"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg></button>
+        <button id="closeOverlay" data-i18n-title="overlay.close" title="Overlay schließen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <button id="resetOverlayPosition" data-i18n-title="overlay.reset_position" title="Overlay-Position zurücksetzen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
       </div>
       <div style="height:6px"></div>
-      <label class="url-label">URL für OBS/Browser:</label>
+      <label class="url-label" data-i18n="livemap.url_label">URL für OBS/Browser:</label>
       <div class="url-row">
         <input id="livemapUrl" type="text" value="" readonly>
-        <button id="copyLivemapUrl" title="URL kopieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        <button id="copyLivemapUrl" data-i18n-title="livemap.copy_url" title="URL kopieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       </div>
       <div style="height:6px"></div>
       <div class="button-row">
-        <button id="downloadHiresBtn" title="Hochauflösende Karten-Tiles herunterladen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Hi-Res Tiles</button>
+        <button id="downloadHiresBtn" data-i18n-title="map.hires_tiles_title" title="Hochauflösende Karten-Tiles herunterladen"><svg id="hiresBtnIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> <span id="hiresBtnText" data-i18n="map.hires_tiles">Hi-Res Tiles</span></button>
       </div>
       <div id="hiresStatus" style="font-size:11px;color:#888;margin-top:4px"></div>
       <div id="hiresProgressBar" class="progress-bar" style="display:none">
@@ -65,11 +65,11 @@
 
     <div class="section">
       <div class="section-header collapsible" id="routesSectionHeader">
-        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19c6 0 3-14 9-14"/></svg></span> Routen</h3>
+        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19c6 0 3-14 9-14"/></svg></span> <span data-i18n="sidebar.routes">Routen</span></h3>
       </div>
       <div id="routesSectionBody">
         <div class="poi-add-buttons">
-          <button id="addRouteBtn" title="Neue Route"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Neue Route</button>
+          <button id="addRouteBtn" data-i18n="routes.new" data-i18n-title="routes.new" title="Neue Route"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="routes.new">Neue Route</span></button>
         </div>
         <div id="routeList"></div>
       </div>
@@ -77,17 +77,17 @@
 
     <div class="section">
       <div class="section-header collapsible" id="poisSectionHeader">
-        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span> POIs</h3>
+        <h3><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="section-title-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span> <span data-i18n="sidebar.pois">POIs</span></h3>
       </div>
       <div id="poisSectionBody">
       <div class="poi-filter-row">
-        <select id="poiCategoryFilter"><option value="">Alle Kategorien</option></select>
+        <select id="poiCategoryFilter"><option value="" data-i18n="poi.all_categories">Alle Kategorien</option></select>
       </div>
       <div class="poi-add-buttons">
-        <button id="addPoiFromLocation" title="Aktuelle Position als POI"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg> Position</button>
-        <button id="addPoiFromClipboard" title="POI aus Zwischenablage importieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Import</button>
+        <button id="addPoiFromLocation" data-i18n-title="poi.from_location_title" title="Aktuelle Position als POI"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg> <span data-i18n="poi.from_location">Position</span></button>
+        <button id="addPoiFromClipboard" data-i18n-title="poi.import_title" title="POI aus Zwischenablage importieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> <span data-i18n="poi.import">Import</span></button>
       </div>
-      <p class="hint">Oder Rechtsklick auf die Karte.</p>
+      <p class="hint" data-i18n="poi.right_click_hint">Oder Rechtsklick auf die Karte.</p>
       <div id="poiList"></div>
       </div>
     </div>
@@ -96,97 +96,102 @@
   <div id="mapShell">
     <div id="map"></div>
     <div id="mapControls">
-      <button id="mapZoomOut" title="Herauszoomen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      <button id="mapZoomOut" data-i18n-title="map.zoom.out" title="Herauszoomen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
       <span id="mapZoomLabel">100%</span>
-      <button id="mapZoomIn" title="Hineinzoomen">+</button>
-      <button id="mapFollowBtn" title="Aktueller Position folgen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" stroke-dasharray="2,3"/></svg></button>
-      <button id="mapCenterBtn" title="Auf aktuelle Position zentrieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
-      <button id="mapFitBtn" title="Gesamte Karte anzeigen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 4 20 10 20"/><polyline points="20 10 20 4 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
-      <button id="mapClusterToggle" title="POI-Clustering an/aus"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg></button>
-      <button id="mapMeasureBtn" title="Messmodus an/aus">M</button>
-      <button id="mapNavBtn" title="Navigation an/aus">N</button>
-      <button id="mapRouteBtn" title="Routenmodus an/aus">R</button>
+      <button id="mapZoomIn" data-i18n-title="map.zoom.in" title="Hineinzoomen">+</button>
+      <button id="mapFollowBtn" data-i18n-title="map.follow" title="Aktueller Position folgen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" stroke-dasharray="2,3"/></svg></button>
+      <button id="mapCenterBtn" data-i18n-title="map.center" title="Auf aktuelle Position zentrieren"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
+      <button id="mapFitBtn" data-i18n-title="map.fit" title="Gesamte Karte anzeigen"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 4 20 10 20"/><polyline points="20 10 20 4 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+      <button id="mapClusterToggle" data-i18n-title="map.cluster" title="POI-Clustering an/aus"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg></button>
+      <button id="mapMeasureBtn" data-i18n-title="map.measure" title="Messmodus an/aus">M</button>
+      <button id="mapNavBtn" data-i18n-title="map.navigation" title="Navigation an/aus">N</button>
+      <button id="mapRouteBtn" data-i18n-title="map.route_mode" title="Routenmodus an/aus">R</button>
     </div>
 
     <div id="navPanel" class="nav-panel">
-      <h3>Navigation</h3>
+      <h3 data-i18n="nav.title">Navigation</h3>
       <div class="nav-mode-tabs">
-        <button id="navModeRoute" class="active">Route</button>
-        <button id="navModeNav">Navigation</button>
+        <button id="navModeRoute" class="active" data-i18n="nav.tab.route">Route</button>
+        <button id="navModeNav" data-i18n="nav.tab.navigation">Navigation</button>
       </div>
-      <div class="nav-row" id="navStartRow"><label>Start</label><span id="navStart">– Rechtsklick setzen</span></div>
-      <div class="nav-row"><label>Ziel</label><span id="navEnd">– Rechtsklick setzen</span></div>
+      <div class="nav-row" id="navStartRow"><label data-i18n="nav.start">Start</label><span id="navStart">– Rechtsklick setzen</span></div>
+      <div class="nav-row"><label data-i18n="nav.end">Ziel</label><span id="navEnd">– Rechtsklick setzen</span></div>
       <div class="nav-btns">
-        <button id="navCalcBtn" class="primary">Route berechnen</button>
-        <button id="navClearBtn" class="danger">Löschen</button>
+        <button id="navCalcBtn" class="primary" data-i18n="nav.calculate">Route berechnen</button>
+        <button id="navClearBtn" class="danger" data-i18n="nav.clear">Löschen</button>
       </div>
       <div class="nav-btns" style="margin-top:4px">
-        <button id="navFollowBtn" class="follow-btn" style="grid-column:1/3">Follow: Spieler-Tracking</button>
+        <button id="navFollowBtn" class="follow-btn" style="grid-column:1/3" data-i18n="nav.follow">Follow: Spieler-Tracking</button>
       </div>
       <div class="nav-info" id="navInfo"></div>
       <div class="nav-progress" id="navProgress"></div>
     </div>
 
-    <button id="settingsToggle" class="settings-toggle" title="Einstellungen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+    <button id="settingsToggle" class="settings-toggle" data-i18n-title="settings.title" title="Einstellungen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
 
     <div id="settingsPanel" class="settings-panel">
       <div class="settings-header">
-        <h3>Einstellungen</h3>
-        <button id="settingsClose" class="icon-btn" title="Schließen">X</button>
+        <h3 data-i18n="settings.title">Einstellungen</h3>
+        <button id="settingsClose" class="icon-btn" data-i18n-title="settings.close" title="Schließen">X</button>
       </div>
       <div class="settings-body">
         <div class="settings-section">
-          <h4>Tracking</h4>
-          <label class="settings-label">Update-Intervall (Sekunden)
+          <h4 data-i18n="settings.section.tracking">Tracking</h4>
+          <label class="settings-label" data-i18n-title="settings.tracking_interval">
+            <span data-i18n="settings.tracking_interval">Update-Intervall (Sekunden)</span>
             <input id="settingsTrackingInterval" type="number" min="1" max="300" value="10">
           </label>
-          <label class="settings-label check"><input id="settingsAutoStartTracking" type="checkbox"> Live-Tracking beim Start automatisch starten</label>
+          <label class="settings-label check"><input id="settingsAutoStartTracking" type="checkbox"> <span data-i18n="settings.auto_start_tracking">Live-Tracking beim Start automatisch starten</span></label>
         </div>
         <div class="settings-section">
-          <h4>Overlay</h4>
-          <label class="settings-label check"><input id="settingsAutoOpenOverlay" type="checkbox"> Overlay beim Start automatisch öffnen</label>
-          <label class="settings-label check"><input id="settingsAutoLockOverlay" type="checkbox"> Overlay automatisch sperren (Klick-durch)</label>
+          <h4 data-i18n="settings.section.overlay">Overlay</h4>
+          <label class="settings-label check"><input id="settingsAutoOpenOverlay" type="checkbox"> <span data-i18n="settings.auto_open_overlay">Overlay beim Start automatisch öffnen</span></label>
+          <label class="settings-label check"><input id="settingsAutoLockOverlay" type="checkbox"> <span data-i18n="settings.auto_lock_overlay">Overlay automatisch sperren (Klick-durch)</span></label>
         </div>
         <div class="settings-section">
-          <h4>Navigation</h4>
-          <label class="settings-label">Routen-Farbe
+          <h4 data-i18n="settings.section.navigation">Navigation</h4>
+          <label class="settings-label" data-i18n-title="settings.route_color">
+            <span data-i18n="settings.route_color">Routen-Farbe</span>
             <div class="color-input-row">
               <input id="settingsNavRouteColor" type="color" value="#00ffcc" data-default="#00ffcc" style="flex:1; height:32px; background:#222; border:1px solid #444; border-radius:4px; cursor:pointer;">
-              <button id="settingsResetNavRouteColor" type="button" class="reset-color-btn" title="Zurücksetzen">↺</button>
+              <button id="settingsResetNavRouteColor" type="button" class="reset-color-btn" data-i18n-title="settings.reset_color" title="Zurücksetzen">↺</button>
             </div>
           </label>
         </div>
         <div class="settings-section">
-          <h4>Auto-POI</h4>
-          <p class="settings-hint">Der Auto-POI-Hotkey macht automatisch einen Screenshot, setzt einen POI an deiner aktuellen Position und speichert ihn. Hier legst du Kategorie, Namenspräfix und Farbe fest.</p>
+          <h4 data-i18n="settings.section.poi">Auto-POI</h4>
+          <p class="settings-hint" data-i18n="settings.auto_poi_hint">Der Auto-POI-Hotkey macht automatisch einen Screenshot, setzt einen POI an deiner aktuellen Position und speichert ihn. Hier legst du Kategorie, Namenspräfix und Farbe fest.</p>
           <div class="settings-row">
-            <label class="settings-label">POI-Hotkey</label>
+            <label class="settings-label" data-i18n="settings.poi_hotkey">POI-Hotkey</label>
             <div class="hotkey-input-row">
               <input id="settingsPoiHotkey" type="text" readonly value="F9">
-              <button id="settingsRecordPoiHotkey" type="button">Aufzeichnen</button>
+              <button id="settingsRecordPoiHotkey" type="button" data-i18n="settings.record_hotkey">Aufzeichnen</button>
             </div>
           </div>
-          <label class="settings-label check"><input id="settingsAutoPoiUseSector" type="checkbox" checked> Sektorkategorie verwenden</label>
-          <label class="settings-label">Eigene Kategorie
-            <input id="settingsAutoPoiCategory" type="text" placeholder="z. B. Auto-POI" style="width:100%; margin-top:6px;">
+          <label class="settings-label check"><input id="settingsAutoPoiUseSector" type="checkbox" checked> <span data-i18n="settings.auto_poi_use_sector">Sektorkategorie verwenden</span></label>
+          <label class="settings-label" data-i18n-title="settings.auto_poi_category">
+            <span data-i18n="settings.auto_poi_category">Eigene Kategorie</span>
+            <input id="settingsAutoPoiCategory" type="text" data-i18n-placeholder="settings.auto_poi_category_placeholder" placeholder="z. B. Auto-POI" style="width:100%; margin-top:6px;">
           </label>
-          <label class="settings-label">Namenspräfix
+          <label class="settings-label" data-i18n-title="settings.auto_poi_prefix">
+            <span data-i18n="settings.auto_poi_prefix">Namenspräfix</span>
             <input id="settingsAutoPoiPrefix" type="text" value="POI" style="width:100%; margin-top:6px;">
           </label>
-          <label class="settings-label">Auto-POI-Farbe
+          <label class="settings-label" data-i18n-title="settings.auto_poi_color">
+            <span data-i18n="settings.auto_poi_color">Auto-POI-Farbe</span>
             <div class="color-input-row">
               <input id="settingsAutoPoiColor" type="color" value="#ff8800" data-default="#ff8800" style="flex:1; height:32px; background:#222; border:1px solid #444; border-radius:4px; cursor:pointer;">
-              <button id="settingsResetAutoPoiColor" type="button" class="reset-color-btn" title="Zurücksetzen">↺</button>
+              <button id="settingsResetAutoPoiColor" type="button" class="reset-color-btn" data-i18n-title="settings.reset_color" title="Zurücksetzen">↺</button>
             </div>
           </label>
         </div>
         <div class="settings-section">
-          <h4>Hotkeys</h4>
+          <h4 data-i18n="settings.section.hotkeys">Hotkeys</h4>
           <div class="settings-row">
-            <label class="settings-label">Bigmap-Hotkey</label>
+            <label class="settings-label" data-i18n="settings.bigmap_hotkey">Bigmap-Hotkey</label>
             <div class="hotkey-input-row">
               <input id="settingsBigmapHotkey" type="text" readonly value="AltGr+M">
-              <button id="settingsRecordBigmapHotkey" type="button">Aufzeichnen</button>
+              <button id="settingsRecordBigmapHotkey" type="button" data-i18n="settings.record_hotkey">Aufzeichnen</button>
             </div>
           </div>
         </div>
@@ -195,74 +200,72 @@
           <label class="settings-label" data-i18n-title="settings.language">
             <span data-i18n="settings.language">Anzeigesprache</span>
             <select id="settingsLanguage" style="width:100%; margin-top:6px; padding:6px; background:#222; border:1px solid #444; border-radius:4px; color:#e2e2e2;">
-              <option value="de" data-i18n="lang.de">Deutsch</option>
-              <option value="en" data-i18n="lang.en">English</option>
             </select>
           </label>
         </div>
         <div class="settings-section">
-          <h4>Backup</h4>
-          <p class="settings-hint">Routen, POIs und Einstellungen jeweils einzeln als Datei sichern oder aus einer Backup-Datei wiederherstellen.</p>
+          <h4 data-i18n="settings.section.backup">Backup</h4>
+          <p class="settings-hint" data-i18n="settings.backup_hint">Routen, POIs und Einstellungen jeweils einzeln als Datei sichern oder aus einer Backup-Datei wiederherstellen.</p>
           <div class="settings-row backup-row-pois">
             <div class="backup-line">
-              <span class="backup-label">Routen</span>
-              <select id="backupRouteSelect" title="Route für den Export wählen"><option value="">Alle Routen</option></select>
+              <span class="backup-label" data-i18n="settings.backup.routes">Routen</span>
+              <select id="backupRouteSelect" data-i18n-title="settings.backup.select_route" title="Route für den Export wählen"><option value="" data-i18n="settings.backup.all_routes">Alle Routen</option></select>
             </div>
             <div class="backup-line">
               <span class="backup-label"></span>
               <div class="backup-buttons">
-                <button id="backupExportRoutes" type="button" title="Routen exportieren">Exportieren</button>
-                <button id="backupImportRoutes" type="button" title="Routen importieren">Importieren</button>
+                <button id="backupExportRoutes" type="button" data-i18n="settings.backup.export" data-i18n-title="settings.backup.export_routes" title="Routen exportieren">Exportieren</button>
+                <button id="backupImportRoutes" type="button" data-i18n="settings.backup.import" data-i18n-title="settings.backup.import_routes" title="Routen importieren">Importieren</button>
               </div>
             </div>
           </div>
           <div class="settings-row backup-row-pois">
             <div class="backup-line">
-              <span class="backup-label">POIs</span>
-              <select id="backupPoiCategorySelect" title="Kategorie für den Export wählen"><option value="">Alle Kategorien</option></select>
+              <span class="backup-label" data-i18n="settings.backup.pois">POIs</span>
+              <select id="backupPoiCategorySelect" data-i18n-title="settings.backup.select_category" title="Kategorie für den Export wählen"><option value="" data-i18n="settings.backup.all_categories">Alle Kategorien</option></select>
             </div>
             <div class="backup-line">
               <span class="backup-label"></span>
-              <label class="backup-checkbox" title="POI-Screenshots mit exportieren (ZIP-Datei)">
+              <label class="backup-checkbox" data-i18n-title="settings.backup.with_images_title" title="POI-Screenshots mit exportieren (ZIP-Datei)">
                 <input type="checkbox" id="backupPoiIncludeImages">
-                <span>mit Bildern</span>
+                <span data-i18n="settings.backup.with_images">mit Bildern</span>
               </label>
             </div>
             <div class="backup-line">
               <span class="backup-label"></span>
               <div class="backup-buttons">
-                <button id="backupExportPois" type="button" title="POIs (ggf. nur gewählte Kategorie) exportieren">Exportieren</button>
-                <button id="backupImportPois" type="button" title="POIs importieren (JSON oder ZIP)">Importieren</button>
+                <button id="backupExportPois" type="button" data-i18n="settings.backup.export" data-i18n-title="settings.backup.export_pois" title="POIs (ggf. nur gewählte Kategorie) exportieren">Exportieren</button>
+                <button id="backupImportPois" type="button" data-i18n="settings.backup.import" data-i18n-title="settings.backup.import_pois" title="POIs importieren (JSON oder ZIP)">Importieren</button>
               </div>
             </div>
           </div>
           <div class="settings-row backup-row">
-            <span class="backup-label">Einstellungen</span>
+            <span class="backup-label" data-i18n="settings.backup.settings">Einstellungen</span>
             <div class="backup-buttons">
-              <button id="backupExportSettings" type="button" title="Einstellungen exportieren">Exportieren</button>
-              <button id="backupImportSettings" type="button" title="Einstellungen importieren">Importieren</button>
+              <button id="backupExportSettings" type="button" data-i18n="settings.backup.export" data-i18n-title="settings.backup.export_settings" title="Einstellungen exportieren">Exportieren</button>
+              <button id="backupImportSettings" type="button" data-i18n="settings.backup.import" data-i18n-title="settings.backup.import_settings" title="Einstellungen importieren">Importieren</button>
             </div>
           </div>
           <div class="settings-row backup-row-pois">
             <div class="backup-line">
-              <span class="backup-label">App Backup</span>
-              <label class="backup-checkbox" title="POI-Screenshots mit ins Backup packen (größere Datei)">
+              <span class="backup-label" data-i18n="settings.backup.app">App Backup</span>
+              <label class="backup-checkbox" data-i18n-title="settings.backup.with_poi_images_title" title="POI-Screenshots mit ins Backup packen (größere Datei)">
                 <input type="checkbox" id="backupAppIncludeImages">
-                <span>mit POI-Bildern</span>
+                <span data-i18n="settings.backup.with_poi_images">mit POI-Bildern</span>
               </label>
             </div>
             <div class="backup-line">
               <span class="backup-label"></span>
               <div class="backup-buttons">
-                <button id="backupExportApp" type="button" title="Komplettes App-Backup als ZIP exportieren">Exportieren</button>
-                <button id="backupImportApp" type="button" title="App-Backup aus ZIP importieren (ersetzt alle Daten)">Importieren</button>
+                <button id="backupExportApp" type="button" data-i18n="settings.backup.export" data-i18n-title="settings.backup.export_app" title="Komplettes App-Backup als ZIP exportieren">Exportieren</button>
+                <button id="backupImportApp" type="button" data-i18n="settings.backup.import" data-i18n-title="settings.backup.import_app" title="App-Backup aus ZIP importieren (ersetzt alle Daten)">Importieren</button>
               </div>
             </div>
           </div>
           <div id="backupStatus" style="color:#888; font-size:12px; margin-top:6px;"></div>
         </div>
         <div class="settings-actions">
-          <button id="settingsSave" class="primary">Speichern</button>
+          <button id="settingsSave" class="primary" data-i18n="settings.save">Speichern</button>
           <span id="settingsSaveStatus" style="color:#888; font-size:12px; margin-left:8px;"></span>
         </div>
       </div>
@@ -271,17 +274,17 @@
     <div id="poiDialog" class="dialog">
       <div class="dialog-content">
         <h3 id="poiDialogTitle">POI hinzufügen</h3>
-        <input type="text" id="poiLabel" placeholder="Name" maxlength="64">
-        <label for="poiCategorySelect" class="dialog-label">Kategorie</label>
+        <input type="text" id="poiLabel" data-i18n-placeholder="poi.name_placeholder" placeholder="Name" maxlength="64">
+        <label for="poiCategorySelect" class="dialog-label" data-i18n="poi.category">Kategorie</label>
         <select id="poiCategorySelect"></select>
-        <input type="text" id="poiCategoryInput" placeholder="Neue Kategorie" style="display:none" maxlength="32">
+        <input type="text" id="poiCategoryInput" data-i18n-placeholder="poi.new_category_placeholder" placeholder="Neue Kategorie" style="display:none" maxlength="32">
         <div class="custom-color-row">
           <input type="color" id="poiColorPicker" value="#ff44d3">
         </div>
         <div id="poiColors" class="color-grid"></div>
         <div class="dialog-actions">
-          <button id="poiCancel">Abbrechen</button>
-          <button id="poiSave">Speichern</button>
+          <button id="poiCancel" data-i18n="poi.cancel">Abbrechen</button>
+          <button id="poiSave" data-i18n="poi.save">Speichern</button>
         </div>
       </div>
     </div>
@@ -339,8 +342,8 @@
 
   <script src="lib/leaflet.js"></script>
   <script src="lib/leaflet.markercluster.js"></script>
-  <script src="i18n/i18n.js?v=3"></script>
+  <script src="i18n/i18n.js?v=4"></script>
   <script src="navigation.js?v=1"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

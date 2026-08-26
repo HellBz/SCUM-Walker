@@ -178,29 +178,8 @@ jobs:
             src-tauri/target/release/bundle/app/*.app.tar.gz.sig
           if-no-files-found: ignore
 
-  build-tiles:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Pack hi-res tiles into ZIP
-        run: |
-          cd tools/tiles-hires
-          zip -r ../../tiles-hires.zip 4 5 6
-          cd ../..
-          ls -lh tiles-hires.zip
-
-      - name: Upload tiles artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tiles-hires
-          path: tiles-hires.zip
-          if-no-files-found: warn
-
   release:
-    needs: [build-app, build-tiles]
+    needs: [build-app]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -224,4 +203,3 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.app.tar.gz
             artifacts/**/*.app.tar.gz.sig
-            artifacts/tiles-hires.zip

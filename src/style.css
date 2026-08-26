@@ -251,7 +251,7 @@ body {
 .progress-fill {
   height: 100%;
   width: 0%;
-  background: #4a9eff;
+  background: #00ffcc;
   transition: width 0.2s ease;
 }
 
