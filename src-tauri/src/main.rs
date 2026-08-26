@@ -1516,9 +1516,7 @@ fn list_languages(app_handle: tauri::AppHandle) -> Result<Vec<(String, String)>,
         if code.is_empty() { continue; }
         let name = if let Ok(text) = std::fs::read_to_string(&path) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                let self_key = format!("lang.{}", code);
-                json.get(&self_key)
-                    .or_else(|| json.get("lang.self"))
+                json.get("lang.self")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| code.clone())
@@ -2040,9 +2038,55 @@ fn import_full_zip_backup(state: State<Arc<AppState>>) -> Result<AppData, String
     Ok(clone)
 }
 
+const CONTENT_INDEX_URL: &str = "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/content-index.json";
 const HIRES_TILES_URL: &str = "https://github.com/HellBz/SCUM-Walker/releases/download/content/tiles-hires.zip";
+const UPDATE_MANIFEST_URL: &str = "https://github.com/HellBz/SCUM-Walker/releases/latest/download/latest.json";
 const LOWRES_TILES_ZIP: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../src/tiles-lowres.zip"));
 const GITHUB_LATEST_RELEASE_URL: &str = "https://api.github.com/repos/HellBz/SCUM-Walker/releases/latest";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContentIndex {
+    schema_version: u32,
+    app: ContentApp,
+    content: ContentPackages,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContentApp {
+    update_manifest_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContentPackages {
+    hires_tiles: ContentPackage,
+}
+
+#[derive(Deserialize)]
+struct ContentPackage {
+    url: String,
+}
+
+async fn load_content_index() -> Option<ContentIndex> {
+    let url = format!("{}?t={}", CONTENT_INDEX_URL, chrono::Utc::now().timestamp());
+    let text = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
+        .build().ok()?
+        .get(url)
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+        .send().await.ok()?
+        .error_for_status().ok()?
+        .text().await.ok()?;
+    let index = serde_json::from_str::<ContentIndex>(&text).ok()?;
+    if index.schema_version == 1 { Some(index) } else { None }
+}
+
+fn valid_remote_url(url: &str) -> bool {
+    reqwest::Url::parse(url).map(|url| url.scheme() == "https").unwrap_or(false)
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct UpdateInfo {
@@ -2064,7 +2108,15 @@ fn get_version() -> String {
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
     let current = release_version().to_string();
-    let updater = app.updater()
+    let endpoint = load_content_index().await
+        .map(|index| index.app.update_manifest_url)
+        .filter(|url| valid_remote_url(url))
+        .unwrap_or_else(|| UPDATE_MANIFEST_URL.to_string());
+    let endpoint = reqwest::Url::parse(&endpoint).map_err(|e| format!("Ungültige Update-URL: {}", e))?;
+    let updater = app.updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|e| format!("Update-Endpunkt ungültig: {}", e))?
+        .build()
         .map_err(|e| format!("Updater nicht verfügbar: {}", e))?;
     let update = updater.check().await
         .map_err(|e| format!("Update-Check fehlgeschlagen: {}", e))?;
@@ -2083,7 +2135,15 @@ async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, Strin
 
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
-    let updater = app.updater()
+    let endpoint = load_content_index().await
+        .map(|index| index.app.update_manifest_url)
+        .filter(|url| valid_remote_url(url))
+        .unwrap_or_else(|| UPDATE_MANIFEST_URL.to_string());
+    let endpoint = reqwest::Url::parse(&endpoint).map_err(|e| format!("Ungültige Update-URL: {}", e))?;
+    let updater = app.updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|e| format!("Update-Endpunkt ungültig: {}", e))?
+        .build()
         .map_err(|e| format!("Updater nicht verfügbar: {}", e))?;
     let update = updater.check().await
         .map_err(|e| format!("Update-Check fehlgeschlagen: {}", e))?;
@@ -2189,7 +2249,11 @@ async fn download_hires_tiles(app_handle: tauri::AppHandle) -> Result<(), String
         .build()
         .map_err(|e| format!("HTTP-Client konnte nicht erstellt werden: {}", e))?;
 
-    let mut response = client.get(HIRES_TILES_URL).send().await
+    let download_url = load_content_index().await
+        .map(|index| index.content.hires_tiles.url)
+        .filter(|url| valid_remote_url(url))
+        .unwrap_or_else(|| HIRES_TILES_URL.to_string());
+    let mut response = client.get(download_url).send().await
         .map_err(|e| format!("Download fehlgeschlagen: {}", e))?;
     let total_size = response.content_length();
 

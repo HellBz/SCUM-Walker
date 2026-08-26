@@ -2512,6 +2512,7 @@ async function saveSettings() {
 if (settingsSave) settingsSave.addEventListener('click', saveSettings);
 if (settingsLanguage) settingsLanguage.addEventListener('change', async () => {
   await I18n.load(settingsLanguage.value);
+  updateScumStatus();
   updateHiresUI();
 });
 

@@ -1,7 +1,5 @@
 {
-  "app.title": "SCUM Walker",
-  "lang.de": "Deutsch",
-  "lang.en": "English",
+  "lang.self": "Deutsch",
   "settings.title": "Einstellungen",
   "settings.close": "Schließen",
   "settings.save": "Speichern",
@@ -12,6 +10,7 @@
   "settings.section.poi": "Auto-POI",
   "settings.section.hotkeys": "Hotkeys",
   "settings.section.language": "Sprache",
+  "settings.language": "Anzeigesprache",
   "settings.section.backup": "Backup",
   "settings.tracking_interval": "Update-Intervall (Sekunden)",
   "settings.auto_start_tracking": "Live-Tracking beim Start automatisch starten",
