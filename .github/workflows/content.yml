@@ -25,7 +25,7 @@ jobs:
 
       - name: Create or update content release
         run: |
-          gh release view content || gh release create content --title "Content" --prerelease
-          gh release upload content tiles-hires.zip --clobber
+          gh release delete content --yes --cleanup-tag || true
+          gh release create content --title "Content" --make-latest=false --target $(git rev-parse HEAD) tiles-hires.zip
         env:
           GH_TOKEN: ${{ github.token }}
