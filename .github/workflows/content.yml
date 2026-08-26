@@ -19,7 +19,7 @@ jobs:
       - name: Pack hi-res tiles
         run: |
           cd tools/tiles-hires
-          zip -r ../../tiles-hires.zip 4 5 6
+          zip -r -9 ../../tiles-hires.zip 4 5 6
           cd ../..
           ls -lh tiles-hires.zip
 
