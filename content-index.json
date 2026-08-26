@@ -1,11 +1,15 @@
 {
-  "version": 1,
-  "tiles": [
-    {
-      "name": "Hi-Res Tiles",
+  "schemaVersion": 1,
+  "app": {
+    "releasesUrl": "https://github.com/HellBz/SCUM-Walker/releases",
+    "updateManifestUrl": "https://github.com/HellBz/SCUM-Walker/releases/latest/download/latest.json"
+  },
+  "content": {
+    "hiresTiles": {
+      "version": 1,
       "url": "https://github.com/HellBz/SCUM-Walker/releases/download/content/tiles-hires.zip",
       "file": "tiles-hires.zip"
     }
-  ],
-  "i18n": []
+  },
+  "languages": []
 }
