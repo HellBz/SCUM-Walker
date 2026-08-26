@@ -15,13 +15,13 @@
     {
       "code": "zh",
       "self": "简体中文",
-      "version": 1,
+      "version": 2,
       "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/zh.json"
     },
     {
       "code": "ber",
       "self": "Berlinerisch",
-      "version": 1,
+      "version": 2,
       "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/de-Berlin.json"
     }
   ]
