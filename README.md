@@ -6,7 +6,7 @@ Live position tracking, route recorder & road navigation, POIs for gear/crates/c
 
 <p align="center">
   <a href="https://github.com/HellBz/SCUM-Walker/releases/latest"><img src="https://img.shields.io/github/v/release/HellBz/SCUM-Walker?label=latest%20release" alt="Latest release"></a>
-  <a href="https://github.com/HellBz/SCUM-Walker/releases/tag/content"><img src="https://img.shields.io/github/downloads/HellBz/SCUM-Walker/content/tiles-hires.zip?label=Hi-Res%20Tiles%20Downloads" alt="Hi-Res Tiles Downloads"></a>
+  <a href="https://github.com/HellBz/SCUM-Walker/releases/latest"><img src="https://img.shields.io/github/downloads/HellBz/SCUM-Walker/latest/total?label=Downloads" alt="Downloads"></a>
   <a href="./src-tauri/LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   <a href="https://www.twitch.tv/hellbz"><img src="https://img.shields.io/twitch/status/hellbz?style=flat&logo=twitch" alt="Twitch"></a>
   <a href="https://discord.gg/tuzpmeZ"><img src="https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
