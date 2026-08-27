@@ -15,14 +15,44 @@
     {
       "code": "zh",
       "self": "简体中文",
-      "version": 2,
+      "version": 3,
       "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/zh.json"
     },
     {
       "code": "ber",
       "self": "Berlinerisch",
-      "version": 2,
+      "version": 3,
       "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/de-Berlin.json"
+    },
+    {
+      "code": "es",
+      "self": "Español",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/es.json"
+    },
+    {
+      "code": "pl",
+      "self": "Polski",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/pl.json"
+    },
+    {
+      "code": "ru",
+      "self": "Русский",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/ru.json"
+    },
+    {
+      "code": "pt-BR",
+      "self": "Português (Brasil)",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/pt-BR.json"
+    },
+    {
+      "code": "fr",
+      "self": "Français",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/fr.json"
     }
   ]
 }
