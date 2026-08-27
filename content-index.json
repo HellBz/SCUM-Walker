@@ -53,6 +53,48 @@
       "self": "Français",
       "version": 1,
       "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/fr.json"
+    },
+    {
+      "code": "ja",
+      "self": "日本語",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/ja.json"
+    },
+    {
+      "code": "th",
+      "self": "ไทย",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/th.json"
+    },
+    {
+      "code": "fi",
+      "self": "Suomi",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/fi.json"
+    },
+    {
+      "code": "sv",
+      "self": "Svenska",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/sv.json"
+    },
+    {
+      "code": "cs",
+      "self": "Čeština",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/cs.json"
+    },
+    {
+      "code": "uk",
+      "self": "Українська",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/uk.json"
+    },
+    {
+      "code": "zh-Hant",
+      "self": "繁體中文",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/HellBz/SCUM-Walker/content/languages/zh-Hant.json"
     }
   ]
 }
