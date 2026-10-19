@@ -18,6 +18,7 @@ const imageDialogTitle = document.getElementById('imageDialogTitle');
 const poiCategorySelect = document.getElementById('poiCategorySelect');
 const poiCategoryInput = document.getElementById('poiCategoryInput');
 const poiCategoryFilter = document.getElementById('poiCategoryFilter');
+const poiSearchInput = document.getElementById('poiSearchInput');
 const versionBadge = document.getElementById('versionBadge');
 const updateLink = document.getElementById('updateLink');
 const toggleCoordsBtn = document.getElementById('toggleCoordsBtn');
@@ -117,6 +118,29 @@ function getPoiCategories() {
   const cats = new Set();
   data.pois.forEach(p => { if (p.category) cats.add(p.category); });
   return Array.from(cats).sort();
+}
+
+function poiCategoryName(poi) {
+  return poi.category || 'Unkategorisiert';
+}
+
+function poiSearchQuery() {
+  return ((poiSearchInput && poiSearchInput.value) || '').trim().toLowerCase();
+}
+
+function poiMatchesFilters(poi) {
+  const cat = poiCategoryName(poi);
+  const categoryFilter = poiCategoryFilter ? poiCategoryFilter.value : '';
+  if (categoryFilter && cat !== categoryFilter) return false;
+  const query = poiSearchQuery();
+  if (!query) return true;
+  const label = (poi.label || '').toLowerCase();
+  return label.includes(query) || cat.toLowerCase().includes(query);
+}
+
+function focusPoiOnMap(poi) {
+  if (!poi) return;
+  map.flyTo(gameToLatLng(poi.x, poi.y), 6, { duration: 0.8 });
 }
 
 function syncHiddenPoiCategories() {
@@ -718,11 +742,11 @@ function updateClusterButton() {
 
 function renderPois() {
   clearPois();
-  const filter = poiCategoryFilter ? poiCategoryFilter.value : '';
   poiClusterGroup = createPoiGroup();
+  const query = poiSearchQuery();
   data.pois
-    .filter(poi => !filter || poi.category === filter)
-    .filter(poi => !hiddenPoiCategories.has(poi.category || 'Unkategorisiert'))
+    .filter(poi => poiMatchesFilters(poi))
+    .filter(poi => query || !hiddenPoiCategories.has(poiCategoryName(poi)))
     .forEach(poi => {
     const ll = gameToLatLng(poi.x, poi.y);
     const color = poi.color || '#ff44d3';
@@ -1002,14 +1026,18 @@ function renderPoiList() {
 
   poiListEl.innerHTML = '';
   if (data.pois.length === 0) {
-    poiListEl.innerHTML = '<p class="empty">Keine POIs</p>';
+    poiListEl.innerHTML = '<p class="empty">' + I18n.t('pois.empty', 'Keine POIs') + '</p>';
     return;
   }
 
-  const filter = poiCategoryFilter ? poiCategoryFilter.value : '';
+  const query = poiSearchQuery();
   const filtered = data.pois
-    .filter(poi => !filter || (poi.category || 'Unkategorisiert') === filter)
-    .sort((a, b) => (a.category || 'Unkategorisiert').localeCompare(b.category || 'Unkategorisiert'));
+    .filter(poi => poiMatchesFilters(poi))
+    .sort((a, b) => poiCategoryName(a).localeCompare(poiCategoryName(b)));
+  if (filtered.length === 0) {
+    poiListEl.innerHTML = '<p class="empty">' + I18n.t('poi.search_empty', 'Keine Treffer') + '</p>';
+    return;
+  }
   let currentCat = null;
   const eyeOpen = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
   const eyeOff = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
@@ -1025,7 +1053,7 @@ function renderPoiList() {
       header.innerHTML = `<span class="poi-group-title"><svg class="collapse-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><svg class="poi-group-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ${cat} (${count})</span><button class="poi-visibility-toggle" data-cat="${cat}" title="${currentCatHidden ? 'Kategorie einblenden' : 'Kategorie ausblenden'}">${currentCatHidden ? eyeOff : eyeOpen}</button>`;
       poiListEl.appendChild(header);
     }
-    if (currentCatHidden) return;
+    if (currentCatHidden && !query) return;
     const hasImage = !!poi.image_path;
     const div = document.createElement('div');
     div.className = 'poi-item';
@@ -1067,20 +1095,13 @@ function renderPoiList() {
     });
   });
 
-  document.addEventListener('click', () => {
-    poiListEl.querySelectorAll('.poi-dropdown.open').forEach(d => d.classList.remove('open'));
-  });
-
   poiListEl.querySelectorAll('.poi-dropdown').forEach(d => {
     d.addEventListener('click', (e) => e.stopPropagation());
   });
 
   poiListEl.querySelectorAll('.poi-label-span').forEach(el => {
     el.addEventListener('click', () => {
-      const poi = data.pois.find(p => p.id === el.dataset.id);
-      if (!poi) return;
-      const ll = gameToLatLng(poi.x, poi.y);
-      map.flyTo(ll, 6, { duration: 0.8 });
+      focusPoiOnMap(data.pois.find(p => p.id === el.dataset.id));
     });
   });
 
@@ -1287,6 +1308,29 @@ if (poiCategoryFilter) {
     updateUI();
   });
 }
+
+if (poiSearchInput) {
+  poiSearchInput.addEventListener('input', () => {
+    renderPoiList();
+    renderPois();
+  });
+  poiSearchInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const query = poiSearchQuery();
+    const match = data.pois.find(poi => {
+      if (!poiMatchesFilters(poi)) return false;
+      if (query) return true;
+      return !hiddenPoiCategories.has(poiCategoryName(poi));
+    });
+    focusPoiOnMap(match);
+  });
+}
+
+document.addEventListener('click', () => {
+  if (!poiListEl) return;
+  poiListEl.querySelectorAll('.poi-dropdown.open').forEach(d => d.classList.remove('open'));
+});
 
 // Route dialog
 function openRouteDialog() {
@@ -1499,12 +1543,59 @@ document.getElementById('poiSave').addEventListener('click', async () => {
 
 // Live tracking toggle
 let isLiveTracking = false;
+let isTrackingPaused = false;
 let trackingInterval = 10;
 const liveTrackingBtn = document.getElementById('toggleLiveTracking');
+const trackingPauseState = document.getElementById('trackingPauseState');
+const settingsPauseHotkey = document.getElementById('settingsPauseHotkey');
 
 function updateMarkerTransition() {
   const dur = Math.max(0.5, trackingInterval - 0.1);
   document.documentElement.style.setProperty('--marker-transition', `${dur}s linear`);
+}
+
+function trackingHotkeyLabel() {
+  const fromSettings = settingsPauseHotkey && settingsPauseHotkey.value;
+  if (fromSettings && fromSettings !== 'Taste drücken...') return fromSettings;
+  return 'F8';
+}
+
+function updateTrackingPauseUi() {
+  const key = trackingHotkeyLabel();
+  if (liveTrackingBtn) {
+    liveTrackingBtn.classList.toggle('tracking-active', isLiveTracking && !isTrackingPaused);
+    liveTrackingBtn.classList.toggle('tracking-paused', isLiveTracking && isTrackingPaused);
+    liveTrackingBtn.textContent = isLiveTracking
+      ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen')
+      : I18n.t('live_tracking.start', 'Live-Tracking starten');
+  }
+  if (!trackingPauseState) return;
+  trackingPauseState.classList.remove('is-active', 'is-paused', 'is-idle');
+  if (isLiveTracking && isTrackingPaused) {
+    trackingPauseState.classList.add('is-paused');
+    trackingPauseState.textContent = I18n.t('live_tracking.state_paused', 'Pausiert · {{key}} setzt fort').replace('{{key}}', key);
+  } else if (isLiveTracking) {
+    trackingPauseState.classList.add('is-active');
+    trackingPauseState.textContent = I18n.t('live_tracking.state_active', 'Aktiv · {{key}} pausiert').replace('{{key}}', key);
+  } else {
+    trackingPauseState.classList.add('is-idle');
+    trackingPauseState.textContent = I18n.t('live_tracking.state_idle', 'Gestoppt · {{key}} startet').replace('{{key}}', key);
+  }
+}
+
+function applyTrackingPausePayload(payload) {
+  isLiveTracking = !!(payload && payload.live_tracking);
+  isTrackingPaused = !!(payload && payload.paused);
+  updateTrackingPauseUi();
+  if (isTrackingPaused) {
+    statusEl.textContent = I18n.t('status.live_tracking_paused', 'Live-Tracking pausiert');
+  } else if (isLiveTracking) {
+    statusEl.textContent = scumRunning
+      ? I18n.t('status.live_tracking_active', 'Live-Tracking aktiv')
+      : I18n.t('status.live_tracking_active_no_scum', 'Live-Tracking aktiv – aber SCUM nicht gestartet');
+  } else {
+    statusEl.textContent = I18n.t('status.live_tracking_paused', 'Live-Tracking pausiert');
+  }
 }
 
 async function syncLiveTrackingState() {
@@ -1513,24 +1604,30 @@ async function syncLiveTrackingState() {
   } catch (err) {
     isLiveTracking = false;
   }
-  if (liveTrackingBtn) {
-    liveTrackingBtn.textContent = isLiveTracking ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen') : I18n.t('live_tracking.start', 'Live-Tracking starten');
+  try {
+    isTrackingPaused = await invoke('is_tracking_paused');
+  } catch (err) {
+    isTrackingPaused = false;
   }
+  updateTrackingPauseUi();
 }
 
 if (window.__TAURI__.event) {
   window.__TAURI__.event.listen('live-tracking-state', (e) => {
     isLiveTracking = !!e.payload;
-    if (liveTrackingBtn) {
-      liveTrackingBtn.textContent = isLiveTracking ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen') : I18n.t('live_tracking.start', 'Live-Tracking starten');
-    }
+    if (!isLiveTracking) isTrackingPaused = false;
+    updateTrackingPauseUi();
+  });
+  window.__TAURI__.event.listen('tracking-pause-state', (e) => {
+    applyTrackingPausePayload(e.payload || {});
   });
 }
 
 liveTrackingBtn.addEventListener('click', async () => {
   try {
     isLiveTracking = await invoke('toggle_live_tracking');
-    liveTrackingBtn.textContent = isLiveTracking ? I18n.t('live_tracking.stop', 'Live-Tracking stoppen') : I18n.t('live_tracking.start', 'Live-Tracking starten');
+    isTrackingPaused = false;
+    updateTrackingPauseUi();
     if (isLiveTracking) {
       await checkScumStatus();
       if (scumRunning) {
@@ -1807,8 +1904,8 @@ if (window.__TAURI__.event) {
   window.__TAURI__.event.listen('scum-status', (event) => {
     scumRunning = event.payload;
     updateScumStatus();
-    if (!scumRunning && isLiveTracking) {
-      statusEl.textContent = 'SCUM nicht gestartet – Live-Tracking pausiert';
+    if (!scumRunning && isLiveTracking && !isTrackingPaused) {
+      statusEl.textContent = I18n.t('status.scum_not_started_p', 'SCUM nicht gestartet – Live-Tracking pausiert');
     }
   });
 
@@ -2370,6 +2467,7 @@ function stopRecording() {
 function validateHotkeys() {
   const named = [
     { input: settingsPoiHotkey, name: 'POI' },
+    { input: settingsPauseHotkey, name: 'Pause' },
     { input: settingsBigmapHotkey, name: 'Bigmap' },
   ].filter(({ input }) => input);
   const counts = {};
@@ -2412,9 +2510,9 @@ window.addEventListener('keydown', (e) => {
   }
 }, true);
 
-['settingsRecordPoiHotkey', 'settingsRecordBigmapHotkey'].forEach((btnId, idx) => {
+['settingsRecordPoiHotkey', 'settingsRecordPauseHotkey', 'settingsRecordBigmapHotkey'].forEach((btnId, idx) => {
   const btn = document.getElementById(btnId);
-  const input = [settingsPoiHotkey, settingsBigmapHotkey][idx];
+  const input = [settingsPoiHotkey, settingsPauseHotkey, settingsBigmapHotkey][idx];
   if (btn && input) {
     btn.addEventListener('click', () => startRecording(input));
   }
@@ -2514,6 +2612,7 @@ async function loadSettings() {
       updateOverlayLockUI();
     }
     if (settingsPoiHotkey) settingsPoiHotkey.value = s.poi_hotkey;
+    if (settingsPauseHotkey) settingsPauseHotkey.value = s.pause_hotkey || 'F8';
     if (settingsBigmapHotkey) settingsBigmapHotkey.value = s.bigmap_hotkey;
     if (settingsNavRouteColor) settingsNavRouteColor.value = s.nav_route_color;
     if (settingsAutoPoiColor) settingsAutoPoiColor.value = s.auto_poi_color;
@@ -2525,6 +2624,7 @@ async function loadSettings() {
     await checkHiresTiles();
     trackingInterval = s.tracking_interval || 10;
     updateMarkerTransition();
+    updateTrackingPauseUi();
     validateHotkeys();
   } catch (err) {
     console.error('[settings] load failed', err);
@@ -2542,6 +2642,7 @@ async function saveSettings() {
       auto_open_overlay: settingsAutoOpenOverlay?.checked || false,
       auto_lock_overlay: settingsAutoLockOverlay?.checked || false,
       poi_hotkey: settingsPoiHotkey?.value || 'F9',
+      pause_hotkey: settingsPauseHotkey?.value || 'F8',
       bigmap_hotkey: settingsBigmapHotkey?.value || 'AltGr+M',
       nav_route_color: settingsNavRouteColor?.value || '#00ffcc',
       auto_poi_color: settingsAutoPoiColor?.value || '#ff8800',
@@ -2553,6 +2654,7 @@ async function saveSettings() {
     const saved = await invoke('save_settings', { settings: payload });
     trackingInterval = saved.tracking_interval;
     updateMarkerTransition();
+    updateTrackingPauseUi();
     navRouteColor = saved.nav_route_color;
     if (navLayer) updateNavRoute();
     if (settingsSaveStatus) {
@@ -2572,6 +2674,7 @@ if (settingsLanguage) settingsLanguage.addEventListener('change', async () => {
   updateHiresUI();
   populateBackupRouteSelect();
   populateBackupPoiCategorySelect();
+  updateTrackingPauseUi();
   updateUI();
 });
 

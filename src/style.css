@@ -102,6 +102,39 @@ body {
   text-align: center;
 }
 
+.tracking-state {
+  margin-top: 6px;
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background: #222;
+  color: #aaa;
+}
+
+.tracking-state.is-active {
+  background: #0a3a25;
+  color: #44cc44;
+  border-color: #44cc4455;
+}
+
+.tracking-state.is-paused {
+  background: #3a2a0a;
+  color: #ffcc00;
+  border-color: #ffcc0055;
+}
+
+#toggleLiveTracking.tracking-active {
+  border-color: #44cc44;
+  color: #44cc44;
+}
+
+#toggleLiveTracking.tracking-paused {
+  border-color: #ffcc00;
+  color: #ffcc00;
+}
+
 .status-row {
   display: flex;
   align-items: center;
@@ -863,8 +896,12 @@ button:hover { background: #3a3a3a; }
 }
 
 .poi-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 8px;
 }
+.poi-filter-row input,
 .poi-filter-row select {
   width: 100%;
   background: #1a1a1a;
@@ -873,6 +910,11 @@ button:hover { background: #3a3a3a; }
   border-radius: 4px;
   padding: 4px 6px;
   font-size: 12px;
+  box-sizing: border-box;
+}
+.poi-filter-row input:focus {
+  outline: none;
+  border-color: #00ffcc;
 }
 
 .poi-add-buttons {
@@ -1255,6 +1297,9 @@ button:hover { background: #3a3a3a; }
   color: #888;
   margin: -6px 0 10px;
   line-height: 1.4;
+}
+.settings-row p.settings-hint {
+  margin: 6px 0 0;
 }
 .settings-section h4 {
   margin: 0 0 10px;

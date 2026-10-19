@@ -1329,6 +1329,14 @@
         }
         break;
       }
+      case 'tracking-pause': {
+        if (msgData && msgData.paused) {
+          showToast('Live tracking paused');
+        } else if (msgData && msgData.live_tracking) {
+          showToast('Live tracking resumed');
+        }
+        break;
+      }
       case 'tracking-interval': {
         break;
       }
