@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::io::{Read, Write};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
 use tauri::webview::WebviewWindowBuilder;
@@ -163,6 +163,8 @@ struct AppData {
     poi_hotkey: String,
     #[serde(default = "default_bigmap_hotkey")]
     bigmap_hotkey: String,
+    #[serde(default = "default_pause_hotkey")]
+    pause_hotkey: String,
     #[serde(default = "default_nav_route_color")]
     nav_route_color: String,
     #[serde(default = "default_auto_poi_color")]
@@ -193,6 +195,10 @@ fn default_bigmap_hotkey() -> String {
     "AltGr+M".to_string()
 }
 
+fn default_pause_hotkey() -> String {
+    "F8".to_string()
+}
+
 fn default_nav_route_color() -> String {
     "#00ffcc".to_string()
 }
@@ -214,6 +220,7 @@ pub(crate) struct AppState {
     pub(crate) data_path: PathBuf,
     recording: Mutex<bool>,
     live_tracking: Mutex<bool>,
+    tracking_paused: Mutex<bool>,
     current_position: Mutex<Option<CoordRecord>>,
     poi_connections: Mutex<Vec<String>>,
     big_map_active: Mutex<bool>,
@@ -269,9 +276,160 @@ fn load_data(path: &PathBuf) -> AppData {
 }
 
 pub(crate) fn save_data(path: &PathBuf, data: &AppData) {
+    maybe_snapshot_before_change(path, data);
     if let Ok(json) = serde_json::to_string_pretty(data) {
         let _ = fs::write(path, json);
     }
+}
+
+const AUTO_BACKUP_KEEP: usize = 5;
+const AUTO_BACKUP_INTERVAL: Duration = Duration::from_secs(10 * 60);
+
+struct AutoBackupRuntime {
+    fingerprint: String,
+    last_attempt: Option<Instant>,
+}
+
+static AUTO_BACKUP: Mutex<AutoBackupRuntime> = Mutex::new(AutoBackupRuntime {
+    fingerprint: String::new(),
+    last_attempt: None,
+});
+
+fn auto_backup_dir(data_path: &Path) -> PathBuf {
+    data_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("backups")
+}
+
+fn list_auto_backup_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return files;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("scum_walker_data-") && name.ends_with(".json") {
+            files.push(entry.path());
+        }
+    }
+    files.sort();
+    files
+}
+
+fn prune_auto_backups(dir: &Path, keep: usize) {
+    let files = list_auto_backup_files(dir);
+    if files.len() <= keep {
+        return;
+    }
+    let remove_count = files.len() - keep;
+    for path in files.into_iter().take(remove_count) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn next_auto_backup_path(dir: &Path) -> PathBuf {
+    let stamp = Utc::now().format("%Y%m%d-%H%M%S");
+    let millis = Utc::now().timestamp_subsec_millis();
+    let mut seq = 0u32;
+    loop {
+        let dest = dir.join(format!(
+            "scum_walker_data-{}-{:03}-{:02}.json",
+            stamp, millis, seq
+        ));
+        if !dest.exists() {
+            return dest;
+        }
+        seq += 1;
+    }
+}
+
+/// Kopiert die aktuelle Datendatei in `backups/` und behält die letzten
+/// `AUTO_BACKUP_KEEP` unterschiedlichen Stände. Identische Inhalte werden
+/// nicht erneut abgelegt, damit unveränderte Starts die älteren Stände
+/// nicht verdrängen.
+fn snapshot_data_file(data_path: &Path) -> bool {
+    if !data_path.is_file() {
+        return false;
+    }
+    let Ok(bytes) = fs::read(data_path) else {
+        return false;
+    };
+    if bytes.is_empty() {
+        return false;
+    }
+    let dir = auto_backup_dir(data_path);
+    if fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+    let existing = list_auto_backup_files(&dir);
+    if let Some(latest) = existing.last() {
+        if fs::read(latest).ok().as_ref() == Some(&bytes) {
+            return false;
+        }
+    }
+    let dest = next_auto_backup_path(&dir);
+    if fs::write(&dest, &bytes).is_err() {
+        return false;
+    }
+    prune_auto_backups(&dir, AUTO_BACKUP_KEEP);
+    eprintln!("[backup] Rotierendes Backup: {}", dest.display());
+    true
+}
+
+fn user_data_fingerprint(data: &AppData) -> String {
+    serde_json::json!({
+        "routes": &data.routes,
+        "current_route_id": &data.current_route_id,
+        "pois": &data.pois,
+        "tracking_interval": data.tracking_interval,
+        "hidden_categories": &data.hidden_categories,
+        "poi_connections": &data.poi_connections,
+        "auto_start_live_tracking": data.auto_start_live_tracking,
+        "auto_open_overlay": data.auto_open_overlay,
+        "auto_lock_overlay": data.auto_lock_overlay,
+        "poi_hotkey": &data.poi_hotkey,
+        "bigmap_hotkey": &data.bigmap_hotkey,
+        "pause_hotkey": &data.pause_hotkey,
+        "nav_route_color": &data.nav_route_color,
+        "auto_poi_color": &data.auto_poi_color,
+        "auto_poi_use_sector_category": data.auto_poi_use_sector_category,
+        "auto_poi_category": &data.auto_poi_category,
+        "auto_poi_name_prefix": &data.auto_poi_name_prefix,
+        "language": &data.language,
+    })
+    .to_string()
+}
+
+fn seed_auto_backup(data_path: &Path, data: &AppData) {
+    snapshot_data_file(data_path);
+    let mut runtime = AUTO_BACKUP.lock().unwrap();
+    runtime.fingerprint = user_data_fingerprint(data);
+    runtime.last_attempt = Some(Instant::now());
+}
+
+fn maybe_snapshot_before_change(data_path: &Path, data: &AppData) {
+    let fingerprint = user_data_fingerprint(data);
+    let mut runtime = AUTO_BACKUP.lock().unwrap();
+    if runtime.fingerprint.is_empty() {
+        runtime.fingerprint = fingerprint;
+        return;
+    }
+    if runtime.fingerprint == fingerprint {
+        return;
+    }
+    let throttled = runtime
+        .last_attempt
+        .map(|at| at.elapsed() < AUTO_BACKUP_INTERVAL)
+        .unwrap_or(false);
+    runtime.fingerprint = fingerprint;
+    if throttled {
+        return;
+    }
+    runtime.last_attempt = Some(Instant::now());
+    drop(runtime);
+    snapshot_data_file(data_path);
 }
 
 pub(crate) fn save_nav_target(path: &PathBuf, target: &Option<CoordRecord>) {
@@ -846,13 +1004,88 @@ fn sync_bigmap_geometry(window: &tauri::WebviewWindow, log: bool) {
 
 #[cfg(windows)]
 fn is_bigmap_foreground(app: &tauri::AppHandle) -> bool {
+    is_labeled_window_foreground(app, "bigmap")
+}
+
+#[cfg(windows)]
+fn is_labeled_window_foreground(app: &tauri::AppHandle, label: &str) -> bool {
     let fg = unsafe { GetForegroundWindow() };
     if fg.0 == 0 {
         return false;
     }
-    app.get_webview_window("bigmap")
+    app.get_webview_window(label)
         .and_then(|w| w.hwnd().ok())
         .map_or(false, |h| h.0 as isize == fg.0 as isize)
+}
+
+/// Pause/Resume soll im Spiel, auf der Bigmap und im Walker-Fenster greifen,
+/// aber nicht jede fremde App um F8 bringen.
+#[cfg(windows)]
+fn pause_hotkey_context(app: &tauri::AppHandle) -> bool {
+    is_scum_foreground()
+        || is_labeled_window_foreground(app, "bigmap")
+        || is_labeled_window_foreground(app, "main")
+        || is_labeled_window_foreground(app, "overlay")
+}
+
+/// Nächster Zustand für den Pause-Hotkey.
+/// Aus = Tracking starten. Aktiv = pausieren. Pausiert = fortsetzen.
+/// Routen und POIs werden hier nicht angefasst.
+fn next_tracking_pause(live_tracking: bool, paused: bool) -> (bool, bool) {
+    if !live_tracking || paused {
+        (true, false)
+    } else {
+        (true, true)
+    }
+}
+
+fn emit_tracking_pause(state: &Arc<AppState>, app: &tauri::AppHandle) {
+    let live_tracking = *state.live_tracking.lock().unwrap();
+    let paused = *state.tracking_paused.lock().unwrap();
+    let recording = *state.recording.lock().unwrap();
+    let payload = serde_json::json!({
+        "live_tracking": live_tracking,
+        "paused": paused,
+        "recording": recording,
+    });
+    let _ = app.emit("tracking-pause-state", &payload);
+    let _ = app.emit("live-tracking-state", live_tracking);
+    ws_broadcast(serde_json::json!(["tracking-pause", payload]).to_string());
+}
+
+fn apply_tracking_pause_toggle(state: &Arc<AppState>, app: &tauri::AppHandle) -> bool {
+    let (live_tracking, paused) = {
+        let mut tracking = state.live_tracking.lock().unwrap();
+        let mut paused = state.tracking_paused.lock().unwrap();
+        let next = next_tracking_pause(*tracking, *paused);
+        *tracking = next.0;
+        *paused = next.1;
+        next
+    };
+    eprintln!(
+        "[tracking] Pause-Hotkey: live_tracking={} paused={}",
+        live_tracking, paused
+    );
+    emit_tracking_pause(state, app);
+    paused
+}
+
+#[cfg(windows)]
+fn start_pause_hotkey_watcher(state: Arc<AppState>, app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        let mut was_down = false;
+        loop {
+            let hotkey = parse_hotkey(&state.data.lock().unwrap().pause_hotkey).unwrap_or_default();
+            let pressed = pause_hotkey_context(&app_handle) && is_hotkey_pressed(&hotkey);
+            if pressed && !was_down {
+                was_down = true;
+                apply_tracking_pause_toggle(&state, &app_handle);
+            } else if !pressed {
+                was_down = false;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
 }
 
 #[cfg(windows)]
@@ -1308,7 +1541,10 @@ fn start_recorder(state: Arc<AppState>, app_handle: tauri::AppHandle) {
         let mut last_scum_text: Option<String> = None;
         loop {
             let tracking = *state.live_tracking.lock().unwrap();
-            if tracking {
+            let paused = *state.tracking_paused.lock().unwrap();
+            // Pausiert: keine Strg+C-Simulation und keine neuen Routenpunkte.
+            // Bestehende Routen bleiben liegen und werden beim Fortsetzen weiter beschrieben.
+            if tracking && !paused {
                 let scum_running = scum_is_running();
                 if scum_running != last_scum_status {
                     let _ = app_handle.emit("scum-status", scum_running);
@@ -1401,6 +1637,8 @@ struct AppSettings {
     auto_lock_overlay: bool,
     poi_hotkey: String,
     bigmap_hotkey: String,
+    #[serde(default = "default_pause_hotkey")]
+    pause_hotkey: String,
     nav_route_color: String,
     auto_poi_color: String,
     auto_poi_use_sector_category: bool,
@@ -1417,6 +1655,7 @@ fn settings_from_data(data: &AppData) -> AppSettings {
         auto_lock_overlay: data.auto_lock_overlay,
         poi_hotkey: data.poi_hotkey.clone(),
         bigmap_hotkey: data.bigmap_hotkey.clone(),
+        pause_hotkey: data.pause_hotkey.clone(),
         nav_route_color: data.nav_route_color.clone(),
         auto_poi_color: data.auto_poi_color.clone(),
         auto_poi_use_sector_category: data.auto_poi_use_sector_category,
@@ -1435,6 +1674,7 @@ fn apply_settings_to_data(data: &mut AppData, settings: &AppSettings) -> Result<
     let hotkeys = [
         ("POI-Hotkey", &settings.poi_hotkey),
         ("Bigmap-Hotkey", &settings.bigmap_hotkey),
+        ("Pause-Hotkey", &settings.pause_hotkey),
     ];
     for (name, combo) in hotkeys {
         if parse_hotkey(combo.trim()).is_none() {
@@ -1448,6 +1688,7 @@ fn apply_settings_to_data(data: &mut AppData, settings: &AppSettings) -> Result<
     data.auto_lock_overlay = settings.auto_lock_overlay;
     data.poi_hotkey = settings.poi_hotkey.trim().to_string();
     data.bigmap_hotkey = settings.bigmap_hotkey.trim().to_string();
+    data.pause_hotkey = settings.pause_hotkey.trim().to_string();
     data.nav_route_color = validate_hex_color(&settings.nav_route_color).unwrap_or_else(default_nav_route_color);
     data.auto_poi_color = validate_hex_color(&settings.auto_poi_color).unwrap_or_else(default_auto_poi_color);
     data.auto_poi_use_sector_category = settings.auto_poi_use_sector_category;
@@ -2484,16 +2725,22 @@ fn toggle_route_visibility(state: State<Arc<AppState>>, id: String) -> AppData {
 }
 
 #[tauri::command]
-fn toggle_recording(state: State<Arc<AppState>>) -> bool {
+fn toggle_recording(state: State<Arc<AppState>>, app_handle: tauri::AppHandle) -> bool {
     let mut recording = state.recording.lock().unwrap();
     *recording = !*recording;
     let is_recording = *recording;
-    // recording requires live tracking
+    drop(recording);
+    // Aufzeichnung braucht laufendes Tracking und darf nicht pausiert bleiben.
     if is_recording {
         let mut tracking = state.live_tracking.lock().unwrap();
+        let was_paused = *state.tracking_paused.lock().unwrap();
+        *state.tracking_paused.lock().unwrap() = false;
         if !*tracking {
             *tracking = true;
-            ws_broadcast(serde_json::json!(["tracking-state", {"recording": true, "live_tracking": true}]).to_string());
+        }
+        drop(tracking);
+        if was_paused {
+            emit_tracking_pause(&state, &app_handle);
         }
     }
     ws_broadcast(serde_json::json!(["tracking-state", {"recording": is_recording, "live_tracking": *state.live_tracking.lock().unwrap()}]).to_string());
@@ -2506,17 +2753,31 @@ fn is_recording(state: State<Arc<AppState>>) -> bool {
 }
 
 #[tauri::command]
-fn toggle_live_tracking(state: State<Arc<AppState>>) -> bool {
+fn toggle_live_tracking(state: State<Arc<AppState>>, app_handle: tauri::AppHandle) -> bool {
     let mut tracking = state.live_tracking.lock().unwrap();
     *tracking = !*tracking;
     let is_tracking = *tracking;
+    drop(tracking);
+    // Start und Stop heben die Pause auf. Die Route bleibt in beiden Fällen erhalten.
+    *state.tracking_paused.lock().unwrap() = false;
     ws_broadcast(serde_json::json!(["tracking-state", {"recording": *state.recording.lock().unwrap(), "live_tracking": is_tracking}]).to_string());
+    emit_tracking_pause(&state, &app_handle);
     is_tracking
 }
 
 #[tauri::command]
 fn is_live_tracking(state: State<Arc<AppState>>) -> bool {
     *state.live_tracking.lock().unwrap()
+}
+
+#[tauri::command]
+fn is_tracking_paused(state: State<Arc<AppState>>) -> bool {
+    *state.tracking_paused.lock().unwrap()
+}
+
+#[tauri::command]
+fn toggle_tracking_pause(state: State<Arc<AppState>>, app_handle: tauri::AppHandle) -> bool {
+    apply_tracking_pause_toggle(&state, &app_handle)
 }
 
 #[tauri::command]
@@ -3017,6 +3278,7 @@ fn main() {
                 .join("nav_route_color.json");
 
             let mut data = load_data(&data_path);
+            seed_auto_backup(&data_path, &data);
             let saved_nav_target = load_nav_target(&nav_target_path);
             let file_nav_route_color = load_nav_route_color(&nav_route_color_path);
             if file_nav_route_color != default_nav_route_color() {
@@ -3029,6 +3291,7 @@ fn main() {
                 data_path,
                 recording: Mutex::new(false),
                 live_tracking: Mutex::new(false),
+                tracking_paused: Mutex::new(false),
                 current_position: Mutex::new(data.player_position.clone()),
                 poi_connections: Mutex::new(data.poi_connections.clone()),
                 big_map_active: Mutex::new(false),
@@ -3048,6 +3311,8 @@ fn main() {
 
             #[cfg(windows)]
             start_hotkey_watcher(state.clone(), app.handle().clone());
+            #[cfg(windows)]
+            start_pause_hotkey_watcher(state.clone(), app.handle().clone());
             #[cfg(windows)]
             start_bigmap_hotkey_watcher(state.clone(), app.handle().clone());
             start_recorder(state.clone(), app.handle().clone());
@@ -3131,6 +3396,8 @@ fn main() {
             is_recording,
             toggle_live_tracking,
             is_live_tracking,
+            is_tracking_paused,
+            toggle_tracking_pause,
             set_tracking_interval,
             get_tracking_interval,
             ws_broadcast_msg,
@@ -3169,4 +3436,65 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "scum-walker-{name}-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn pause_hotkey_cycles_without_clearing_routes() {
+        assert_eq!(next_tracking_pause(false, false), (true, false));
+        assert_eq!(next_tracking_pause(true, false), (true, true));
+        assert_eq!(next_tracking_pause(true, true), (true, false));
+        let mut route = Route::new("Test".to_string(), "#00ffcc".to_string());
+        route.records.push(CoordRecord {
+            time: Utc::now(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+        });
+        let before = route.records.len();
+        let _ = next_tracking_pause(true, false);
+        assert_eq!(route.records.len(), before);
+    }
+
+    #[test]
+    fn rotating_backup_keeps_five_and_skips_duplicates() {
+        let dir = temp_dir("backup");
+        let data_path = dir.join("scum_walker_data.json");
+        fs::write(&data_path, "{\"n\":0}").unwrap();
+        assert!(snapshot_data_file(&data_path));
+        assert!(!snapshot_data_file(&data_path));
+        assert_eq!(list_auto_backup_files(&auto_backup_dir(&data_path)).len(), 1);
+
+        for i in 1..7 {
+            fs::write(&data_path, format!("{{\"n\":{i}}}")).unwrap();
+            assert!(snapshot_data_file(&data_path), "snapshot {i}");
+        }
+        let backups = list_auto_backup_files(&auto_backup_dir(&data_path));
+        assert_eq!(backups.len(), AUTO_BACKUP_KEEP);
+        let oldest = fs::read_to_string(&backups[0]).unwrap();
+        assert!(oldest.contains("\"n\":2"), "{oldest}");
+        let newest = fs::read_to_string(backups.last().unwrap()).unwrap();
+        assert!(newest.contains("\"n\":6"), "{newest}");
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

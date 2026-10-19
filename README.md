@@ -77,6 +77,7 @@ Requirements:
 
 | Shortcut | English | Deutsch |
 |---|---|---|
+| **F8** | Pause or resume live tracking. While paused, Walker does not send Ctrl+C and does not append route points. Existing routes stay intact. | Pausiert oder setzt das Live-Tracking fort. In der Pause sendet Walker kein Strg+C und hängt keine Routenpunkte an. Vorhandene Routen bleiben erhalten. |
 | **F9** | Take an in-game screenshot and automatically create a POI. | Macht einen Ingame-Screenshot und erstellt automatisch einen POI. |
 | **AltGr + M** | Open the in-game map overlay while playing. | Öffnet das Ingame-Map-Overlay während des Spielens. |
 

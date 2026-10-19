@@ -20,12 +20,6 @@ mehreren Kategorien gleichzeitig zugeordnet werden können (z. B. als Liste
 von Kategorien), inkl. entsprechender Anpassung von Filter, Kategorie-Liste,
 Backup-Export/-Import und Anzeige in der Sidebar/Karte.
 
-## 4. POI-Suche
-Textfeld in der POI-Sidebar, das gleichzeitig nach Name UND Kategorie
-filtert (z. B. "B3" findet sowohl POIs mit Namen "B3 ..." als auch alle
-POIs der Kategorie "B3", "Bunker" findet alle Bunker-POIs egal in welchem
-Sektor). Ergänzt den bestehenden Kategorie-Filter.
-
 ## 5. Papierkorb / Undo für gelöschte Routen & POIs
 Aktuell ist Löschen sofort endgültig (nur per `confirm()`-Dialog
 abgesichert). Geplant: gelöschte Routen/POIs erst in einen Papierkorb
@@ -39,12 +33,6 @@ in `poi_images/` liegen und wird nie gelöscht. Im Zuge des Papierkorbs
 sollte das Bild solange erhalten bleiben, bis der POI endgültig aus dem
 Papierkorb entfernt wird (erst dann Bilddatei löschen) – sonst sammeln sich
 dauerhaft ungenutzte Bilder an.
-
-## 6. Automatisches Rotations-Backup
-Beim App-Start automatisch ein Backup der `scum_walker_data.json` anlegen
-(z. B. die letzten 5 Stände rotierend aufbewahren), unabhängig vom
-manuellen Backup-Feature. Schützt vor Datenverlust durch fehlerhafte
-Speicherstände oder versehentliches Löschen.
 
 ## 7. Mehrere Wegpunkte in der Navigation
 Aktuell unterstützt der Navigationsmodus nur genau einen Start- und
@@ -76,6 +64,11 @@ mit Name/Beschreibung/Anzahl pro Pack. Die App lädt den Index, zeigt eine
 Auswahl an und importiert das gewählte Pack über die bestehende
 ZIP-Import-Logik (Quelle dann URL statt lokale Datei). Zusätzlich 1-2
 Standard-Packs im Installer bündeln als Offline-Fallback.
+
+## Erledigt
+- **POI-Suche** – Textfeld in der POI-Sidebar filtert nach Name und Kategorie und zentriert die Karte auf den gewählten Treffer.
+- **Automatisches Rotations-Backup** – Beim Start und nach Änderungen (höchstens alle 10 Minuten) wird `scum_walker_data.json` gesichert, die letzten 5 unterschiedlichen Stände bleiben erhalten.
+- **Pause/Resume-Hotkey** – F8 pausiert das Live-Tracking, ohne die aufgezeichnete Route zu verwerfen (Issue #4).
 
 ## Verworfen
 - **GPX/KML-Export von Routen** – ergibt keinen Sinn, da SCUM-Koordinaten

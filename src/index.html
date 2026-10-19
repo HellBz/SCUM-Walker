@@ -36,6 +36,7 @@
       <div id="livemapSectionBody">
       <div class="button-row">
         <button id="toggleLiveTracking" style="width:100%" data-i18n="live_tracking.start">Live-Tracking starten</button>
+        <div id="trackingPauseState" class="tracking-state is-idle">Gestoppt · F8 startet</div>
       </div>
       <div class="button-row">
         <button id="openOverlay" data-i18n="overlay.open" data-i18n-title="overlay.open" title="Overlay öffnen">Overlay öffnen</button>
@@ -81,6 +82,7 @@
       </div>
       <div id="poisSectionBody">
       <div class="poi-filter-row">
+        <input id="poiSearchInput" type="search" autocomplete="off" data-i18n-placeholder="poi.search_placeholder" placeholder="Name oder Kategorie suchen" title="POIs nach Name oder Kategorie filtern">
         <select id="poiCategoryFilter"><option value="" data-i18n="poi.all_categories">Alle Kategorien</option></select>
       </div>
       <div class="poi-add-buttons">
@@ -188,6 +190,14 @@
         <div class="settings-section">
           <h4 data-i18n="settings.section.hotkeys">Hotkeys</h4>
           <div class="settings-row">
+            <label class="settings-label" data-i18n="settings.pause_hotkey">Pause-Hotkey</label>
+            <div class="hotkey-input-row">
+              <input id="settingsPauseHotkey" type="text" readonly value="F8">
+              <button id="settingsRecordPauseHotkey" type="button" data-i18n="settings.record_hotkey">Aufzeichnen</button>
+            </div>
+            <p class="settings-hint" data-i18n="settings.pause_hotkey_hint">Pausiert und setzt das Live-Tracking fort. Während der Pause geht kein Strg+C an SCUM, die Route bleibt erhalten. Standard: F8.</p>
+          </div>
+          <div class="settings-row">
             <label class="settings-label" data-i18n="settings.bigmap_hotkey">Bigmap-Hotkey</label>
             <div class="hotkey-input-row">
               <input id="settingsBigmapHotkey" type="text" readonly value="AltGr+M">
@@ -206,7 +216,7 @@
         </div>
         <div class="settings-section">
           <h4 data-i18n="settings.section.backup">Backup</h4>
-          <p class="settings-hint" data-i18n="settings.backup_hint">Routen, POIs und Einstellungen jeweils einzeln als Datei sichern oder aus einer Backup-Datei wiederherstellen.</p>
+          <p class="settings-hint" data-i18n="settings.backup_hint">Routen, POIs und Einstellungen jeweils einzeln als Datei sichern oder aus einer Backup-Datei wiederherstellen. Zusätzlich legt die App beim Start und spätestens alle 10 Minuten nach Änderungen automatisch eine Kopie von scum_walker_data.json an und behält die letzten 5 Stände.</p>
           <div class="settings-row backup-row-pois">
             <div class="backup-line">
               <span class="backup-label" data-i18n="settings.backup.routes">Routen</span>
